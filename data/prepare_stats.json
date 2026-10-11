@@ -1,0 +1,41 @@
+{
+  "rows_downloaded": {
+    "ccrs": 112086,
+    "pothole_quickfix": 12060,
+    "total": 124146
+  },
+  "dropped_bad_or_missing_coordinates": 550,
+  "dropped_placeholder_coordinate": 14546,
+  "placeholder_coordinate": [
+    19.07766,
+    72.87741
+  ],
+  "ward_derived_by_point_in_polygon": 58,
+  "dropped_no_ward": 0,
+  "rows_shipped": 96999,
+  "date_range": [
+    "2026-03-18",
+    "2026-10-11"
+  ],
+  "by_category": {
+    "Garbage & Sanitation": 16056,
+    "Buildings, Licences & Property": 15550,
+    "Potholes": 12692,
+    "Encroachment & Hawkers": 11519,
+    "Drainage & Sewage": 10197,
+    "Trees & Gardens": 7607,
+    "Roads & Footpaths": 7410,
+    "Water Supply": 7194,
+    "Pests, Health & Environment": 6939,
+    "Street Lights": 1592,
+    "Other": 243
+  },
+  "by_status": {
+    "Closed": 76576,
+    "In Progress": 14282,
+    "In Review": 6126,
+    "Discarded": 14,
+    "New": 1
+  },
+  "res_days_available": 76495
+}
