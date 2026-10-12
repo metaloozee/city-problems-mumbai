@@ -1,4 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+/** True when the viewport matches the CSS media query (used to switch to the mobile map-first layout). */
+function useMedia(q: string) {
+  const [m, setM] = useState(() => window.matchMedia(q).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(q);
+    const h = () => setM(mq.matches);
+    mq.addEventListener("change", h); h();
+    return () => mq.removeEventListener("change", h);
+  }, [q]);
+  return m;
+}
 import { loadData } from "./data";
 import type { Complaint, Filters, QuerySpec, WardInfo } from "./types";
 import { applyFilters, download, runQuery, toCsv, METRICS } from "./query";
@@ -19,6 +31,13 @@ export default function App() {
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const [mode, setMode] = useState<MapMode>("clusters");
   const [choro, setChoro] = useState<ChoroMetric>("per_100k");
+  const isMobile = useMedia("(max-width: 820px)");
+  const [sheet, setSheet] = useState(false);
+  const [tab, setTab] = useState<"filters" | "query" | "about">("filters");
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape") setSheet(false); };
+    window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
+  }, []);
 
   useEffect(() => { loadData().then(setData).catch((e) => setErr(String(e))); }, []);
 
@@ -78,6 +97,82 @@ export default function App() {
   if (err) return <div className="boot">Failed to load data: {err}</div>;
   if (!data) return <div className="boot"><div className="spin" />Loading ~97k Mumbai civic complaints…</div>;
 
+  const filtersEl = (
+    <FiltersPanel f={filters} set={(f) => { setFilters(f); setActivePreset(null); }} categories={catList} wards={wardCodes} statuses={statuses}
+      minDate={minDate} maxDate={maxDate} shown={filtered.length} total={rows.length} onReset={() => { setFilters(EMPTY); setActivePreset(null); }} />
+  );
+  const queryEl = <QueryPanel spec={spec} setSpec={onSpec} filters={filters} result={result} activePreset={activePreset} onPreset={applyPreset} showOnMap={showOnMap} />;
+  const modeLabel = (m: MapMode) => (m === "clusters" ? "Markers" : m === "heatmap" ? "Heatmap" : "Ward map");
+  const colourSelect = (
+    <label className="inline">Colour by
+      <select value={choro} onChange={(e) => setChoro(e.target.value as ChoroMetric)}>
+        <option value="count">Complaint count</option>
+        <option value="per_100k">Complaints per 100k residents</option>
+        <option value="avg_res_days">Avg resolution days</option>
+        <option value="pct_resolved">% resolved</option>
+        <option value="query" disabled={spec.groupBy !== "ward"}>Current query result (ward)</option>
+      </select>
+    </label>
+  );
+  const cardsEl = (
+    <>
+      <Card label="Complaints" value={stats.n.toLocaleString()} sub="matching filters" />
+      <Card label="Resolved" value={`${stats.pctClosed.toFixed(1)}%`} sub="status = Closed" />
+      <Card label="Still open" value={stats.open.toLocaleString()} sub="new / in review / in progress" />
+      <Card label="Avg days to close" value={stats.avg ? stats.avg.toFixed(1) : "–"} sub="closed complaints" />
+      <Card label="Busiest ward" value={stats.topWard ? `Ward ${stats.topWard[0]}` : "–"} sub={stats.topWard ? `${stats.topWard[1].toLocaleString()} complaints` : ""} />
+      <Card label="Top category" value={stats.topCat ? stats.topCat[0] : "–"} sub={stats.topCat ? `${stats.topCat[1].toLocaleString()} complaints` : ""} small />
+    </>
+  );
+  const footerText = (
+    <>Data: BMC / MCGM MARG public ArcGIS service (CCRS complaints + Pothole QuickFix), fetched Oct 2026 · Ward boundaries: same service · Map © OpenStreetMap contributors.
+    Resolution time = complaint date → date of attended (“after”) image. Not an official BMC product.</>
+  );
+
+  if (isMobile) {
+    return (
+      <div className="m-root">
+        <div className="m-map">
+          <MapView rows={filtered} geo={data.geo} mode={mode} wardValues={wardValues} wardLabel={wardLabel} selectedWards={filters.wards} onWardClick={onWardClick} />
+        </div>
+        <div className="m-top">
+          <div className="m-title"><h1>🏙️ City Problems <span>· Mumbai</span></h1><span className="muted small">{filtered.length.toLocaleString()} shown</span></div>
+          <div className="m-modes">
+            <div className="seg">
+              {(["clusters", "heatmap", "choropleth"] as MapMode[]).map((m) => (
+                <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{modeLabel(m)}</button>
+              ))}
+            </div>
+            {mode === "choropleth" && colourSelect}
+          </div>
+          <div className="strip">{cardsEl}</div>
+        </div>
+        {!sheet && <button className="fab" onClick={() => setSheet(true)} aria-label="Open filters and queries">☰ Filters &amp; Queries{filters.categories.length + filters.wards.length + filters.statuses.length > 0 ? " •" : ""}</button>}
+        <div className={"sheet" + (sheet ? " open" : "")} role="dialog" aria-label="Filters and queries" aria-hidden={!sheet}>
+          <div className="sheet-bar">
+            <div className="tabs">
+              {([["filters", "Filters"], ["query", "Queries"], ["about", "About"]] as const).map(([k, l]) => (
+                <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>
+              ))}
+            </div>
+            <button className="btn close" onClick={() => setSheet(false)} aria-label="Close panel">✕</button>
+          </div>
+          <div className="sheet-body">
+            {sheet && tab === "filters" && filtersEl}
+            {sheet && tab === "query" && queryEl}
+            {sheet && tab === "about" && (
+              <section className="panel">
+                <button className="btn primary" onClick={exportFiltered}>Export filtered CSV ({filtered.length.toLocaleString()})</button>
+                <p>Real BMC complaints (potholes, garbage, drainage, water…) · {minDate} → {maxDate} · MyBMC MARG open service</p>
+                <footer>{footerText}</footer>
+              </section>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <header className="top">
@@ -88,48 +183,27 @@ export default function App() {
         <button className="btn primary" onClick={exportFiltered}>Export filtered CSV ({filtered.length.toLocaleString()})</button>
       </header>
 
-      <section className="cards">
-        <Card label="Complaints" value={stats.n.toLocaleString()} sub="matching filters" />
-        <Card label="Resolved" value={`${stats.pctClosed.toFixed(1)}%`} sub="status = Closed" />
-        <Card label="Still open" value={stats.open.toLocaleString()} sub="new / in review / in progress" />
-        <Card label="Avg days to close" value={stats.avg ? stats.avg.toFixed(1) : "–"} sub="closed complaints" />
-        <Card label="Busiest ward" value={stats.topWard ? `Ward ${stats.topWard[0]}` : "–"} sub={stats.topWard ? `${stats.topWard[1].toLocaleString()} complaints` : ""} />
-        <Card label="Top category" value={stats.topCat ? stats.topCat[0] : "–"} sub={stats.topCat ? `${stats.topCat[1].toLocaleString()} complaints` : ""} small />
-      </section>
+      <section className="cards">{cardsEl}</section>
 
       <main className="grid">
-        <FiltersPanel f={filters} set={(f) => { setFilters(f); setActivePreset(null); }} categories={catList} wards={wardCodes} statuses={statuses}
-          minDate={minDate} maxDate={maxDate} shown={filtered.length} total={rows.length} onReset={() => { setFilters(EMPTY); setActivePreset(null); }} />
+        {filtersEl}
         <section className="panel mapbox">
           <div className="maptools">
             <div className="seg">
               {(["clusters", "heatmap", "choropleth"] as MapMode[]).map((m) => (
-                <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{m === "clusters" ? "Markers" : m === "heatmap" ? "Heatmap" : "Ward map"}</button>
+                <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{modeLabel(m)}</button>
               ))}
             </div>
-            {mode === "choropleth" && (
-              <label className="inline">Colour by
-                <select value={choro} onChange={(e) => setChoro(e.target.value as ChoroMetric)}>
-                  <option value="count">Complaint count</option>
-                  <option value="per_100k">Complaints per 100k residents</option>
-                  <option value="avg_res_days">Avg resolution days</option>
-                  <option value="pct_resolved">% resolved</option>
-                  <option value="query" disabled={spec.groupBy !== "ward"}>Current query result (ward)</option>
-                </select>
-              </label>
-            )}
+            {mode === "choropleth" && colourSelect}
             <span className="muted small">{mode === "choropleth" ? "Click a ward to filter by it" : `${filtered.length.toLocaleString()} points`}</span>
           </div>
           <MapView rows={filtered} geo={data.geo} mode={mode} wardValues={wardValues} wardLabel={wardLabel} selectedWards={filters.wards} onWardClick={onWardClick} />
         </section>
       </main>
 
-      <QueryPanel spec={spec} setSpec={onSpec} filters={filters} result={result} activePreset={activePreset} onPreset={applyPreset} showOnMap={showOnMap} />
+      {queryEl}
 
-      <footer>
-        Data: BMC / MCGM MARG public ArcGIS service (CCRS complaints + Pothole QuickFix), fetched Oct 2026 · Ward boundaries: same service · Map © OpenStreetMap contributors.
-        Resolution time = complaint date → date of attended (“after”) image. Not an official BMC product.
-      </footer>
+      <footer>{footerText}</footer>
     </div>
   );
 }

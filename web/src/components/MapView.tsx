@@ -84,7 +84,7 @@ function Choropleth({ geo, values, label, selected, onClick }: { geo: any; value
     const legend = new L.Control({ position: "bottomright" });
     legend.onAdd = () => {
       const d = L.DomUtil.create("div", "legend");
-      d.innerHTML = `<b>${label}</b><div class="ramp">${RAMP.map((c) => `<i style="background:${c}"></i>`).join("")}</div><div class="rl"><span>${min.toFixed(0)}</span><span>${max.toFixed(max < 20 ? 1 : 0)}</span></div>`;
+      d.innerHTML = `<b class="lg-t">${label}</b><div class="ramp">${RAMP.map((c) => `<i style="background:${c}"></i>`).join("")}</div><div class="rl"><span>${min.toFixed(0)}</span><span>${max.toFixed(max < 20 ? 1 : 0)}</span></div>`;
       return d;
     };
     legend.addTo(map);

@@ -76,3 +76,7 @@ scripts/             download_raw.py, prepare_data.py
 web/                 Vite + React + TS app (public/data = shipped dataset)
 artifacts/screenshots/
 ```
+
+## Mobile / responsive UI
+
+At viewport widths ≤ 820 px (phones and portrait tablets) the app switches to a map-first layout: a full-viewport map (`100dvh`, safe-area aware) with a compact top bar (layer toggle, colour-by, swipeable stat cards) and a **Filters & Queries** button that opens a bottom sheet (Filters / Queries / About tabs; ✕ or Esc closes). Controls use ≥44 px touch targets and 16 px inputs (no iOS zoom). Wider screens keep the original desktop layout. Screenshots: `artifacts/screenshots/mobile-*.png`.
