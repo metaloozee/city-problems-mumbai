@@ -1,7 +1,5 @@
-/* Firecrawl design system tokens (from the "Firecrawl" Design System artifact). Build with token names, never raw values. */
+/* Firecrawl design system colour tokens (from the "Firecrawl" Design System artifact). Fonts, radii and the type scale live in tailwind.css. */
 :root {
-  --font-sans: SuisseIntl, "Suisse Intl", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --background-base: #f9f9f9;
   --background-lighter: #fbfbfb;
@@ -51,7 +49,6 @@
   --status-citizen: #2a6dfb;
 
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-16: 64px;
-  --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px; --radius-full: 999px;
   --opacity-disabled: 0.5;
   --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
   --shadow-heat-button: inset 0 -6px 12px 0 rgba(255, 0, 0, 0.2), 0 0.6px 0.8px 0 rgba(255, 139, 0, 0.22), 0 1.3px 1.7px 0 rgba(255, 139, 0, 0.19),
@@ -81,60 +78,6 @@
   --black-alpha-48: #f5f5f57a; --black-alpha-64: #f5f5f5a3; --black-alpha-72: #f5f5f5b8; --white-alpha-72: #000000b8;
   color-scheme: dark;
 }
-
-/* Type styles */
-.title-h4 { font: 500 32px/36px var(--font-sans); letter-spacing: -0.32px; }
-.title-h5 { font: 500 24px/32px var(--font-sans); letter-spacing: -0.24px; }
-.label-x-large { font: 450 20px/28px var(--font-sans); letter-spacing: -0.1px; }
-.label-large { font: 450 16px/24px var(--font-sans); }
-.label-medium { font: 450 14px/20px var(--font-sans); }
-.label-small { font: 450 13px/20px var(--font-sans); }
-.label-x-small { font: 450 12px/20px var(--font-sans); }
-.body-large { font: 400 16px/24px var(--font-sans); }
-.body-input { font: 400 15px/24px var(--font-sans); }
-.body-medium { font: 400 14px/20px var(--font-sans); letter-spacing: 0.14px; }
-.body-small { font: 400 13px/20px var(--font-sans); }
-.mono-medium { font: 400 14px/22px var(--font-mono); }
-.mono-small { font: 500 13px/20px var(--font-mono); }
-.mono-x-small { font: 400 12px/16px var(--font-mono); }
-
-/* Components (fc- prefix, from the design system's bundle.css) */
-.fc-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
-  height: 40px; padding: var(--space-2) var(--space-4); border: 0; border-radius: var(--radius-sm);
-  font-family: var(--font-sans); cursor: pointer; transition: all 0.2s var(--ease); white-space: nowrap; text-decoration: none;
-}
-.fc-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--heat-100); }
-.fc-btn:disabled, .fc-btn[aria-disabled="true"] { opacity: var(--opacity-disabled); cursor: not-allowed; }
-.fc-btn--primary { background: var(--heat-100); color: var(--accent-white); box-shadow: var(--shadow-heat-button); }
-.fc-btn--primary:active:not(:disabled) { transform: scale(0.995); }
-.fc-btn--primary:focus-visible { box-shadow: var(--shadow-heat-button), 0 0 0 2px var(--surface), 0 0 0 4px var(--heat-100); }
-.fc-btn--secondary { background: var(--black-alpha-4); color: var(--accent-black); }
-.fc-btn--secondary:hover:not(:disabled) { background: var(--black-alpha-6); }
-.fc-btn--secondary:active:not(:disabled) { background: var(--black-alpha-7); transform: scale(0.99); }
-.fc-btn--tertiary { background: transparent; color: var(--accent-black); }
-.fc-btn--tertiary:hover:not(:disabled) { background: var(--black-alpha-4); }
-.fc-btn--tertiary:active:not(:disabled) { transform: scale(0.99); }
-.fc-btn--sm { height: 32px; padding: var(--space-2) var(--space-3); }
-.fc-btn--lg { height: 48px; padding: var(--space-3) var(--space-6); }
-
-.fc-input {
-  box-sizing: border-box; height: 40px; padding: var(--space-2) var(--space-3); width: 100%;
-  background: var(--surface); color: var(--accent-black); border: 1px solid var(--border-muted); border-radius: var(--radius-sm);
-  font-family: var(--font-sans); transition: all 0.2s var(--ease);
-}
-.fc-input::placeholder { color: var(--black-alpha-64); }
-.fc-input:focus-visible { outline: 2px solid var(--heat-100); outline-offset: 0; }
-.fc-input:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
-.fc-input[aria-invalid="true"] { border-color: var(--accent-crimson); }
-.fc-input--sm { height: 32px; }
-textarea.fc-input { height: auto; min-height: 96px; resize: vertical; }
-
-.fc-card {
-  box-sizing: border-box; background: var(--surface); color: var(--accent-black);
-  border: 1px solid var(--border-muted); border-radius: var(--radius-md); padding: var(--space-6);
-}
-.fc-card--compact { padding: var(--space-4); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }

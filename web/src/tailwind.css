@@ -1,0 +1,86 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* App.tsx sets .dark on <html> from the system preference, the same switch tokens.css uses. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Firecrawl design system: fonts and radii. Controls use rounded-md (8px), cards rounded-xl (12px), sheets rounded-2xl (16px). */
+@theme {
+  --font-sans: SuisseIntl, "Suisse Intl", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --shadow-heat: var(--shadow-heat-button);
+}
+
+/* shadcn colour roles mapped onto the colour tokens in tokens.css, so components follow its light and dark values. */
+@theme inline {
+  --color-background: var(--background-base);
+  --color-foreground: var(--accent-black);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--accent-black);
+  --color-popover: var(--surface-raised);
+  --color-popover-foreground: var(--accent-black);
+  --color-primary: var(--heat-100);
+  --color-primary-foreground: var(--accent-white);
+  --color-secondary: var(--black-alpha-4);
+  --color-secondary-foreground: var(--accent-black);
+  --color-muted: var(--black-alpha-4);
+  --color-muted-foreground: var(--black-alpha-64);
+  --color-accent: var(--black-alpha-6);
+  --color-accent-foreground: var(--accent-black);
+  --color-destructive: var(--accent-crimson);
+  --color-border: var(--border-muted);
+  --color-input: var(--border-loud);
+  --color-ring: var(--heat-100);
+  --color-heat: var(--heat-100);
+  --color-heat-subtle: var(--heat-8);
+  --color-status-open: var(--status-open);
+  --color-status-resolved: var(--status-resolved);
+  --color-status-closed: var(--status-closed);
+  --color-status-citizen: var(--status-citizen);
+}
+
+/* Firecrawl type scale. */
+@utility title-h4 { font: 500 32px/36px var(--font-sans); letter-spacing: -0.32px; }
+@utility title-h5 { font: 500 24px/32px var(--font-sans); letter-spacing: -0.24px; }
+@utility label-x-large { font: 450 20px/28px var(--font-sans); letter-spacing: -0.1px; }
+@utility label-large { font: 450 16px/24px var(--font-sans); }
+@utility label-medium { font: 450 14px/20px var(--font-sans); }
+@utility label-small { font: 450 13px/20px var(--font-sans); }
+@utility label-x-small { font: 450 12px/20px var(--font-sans); }
+@utility body-large { font: 400 16px/24px var(--font-sans); }
+@utility body-medium { font: 400 14px/20px var(--font-sans); letter-spacing: 0.14px; }
+@utility body-small { font: 400 13px/20px var(--font-sans); }
+@utility mono-small { font: 500 13px/20px var(--font-mono); }
+@utility mono-x-small { font: 400 12px/16px var(--font-mono); }
+@utility stat-value { font: 500 24px/32px var(--font-sans); letter-spacing: -0.24px; font-variant-numeric: tabular-nums; }
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background font-sans text-foreground antialiased; }
+}
+
+@layer base {
+  .maplibregl-popup-content {
+    @apply bg-transparent! shadow-none! p-0! rounded-none!;
+  }
+  .maplibregl-popup-tip {
+    @apply hidden!;
+  }
+  .maplibregl-ctrl-attrib {
+    @apply bg-background! text-muted-foreground! border-border! rounded-md! border! shadow-sm!;
+  }
+  .maplibregl-ctrl-attrib a {
+    @apply text-muted-foreground!;
+  }
+  .maplibregl-ctrl-attrib a:hover {
+    @apply text-foreground!;
+  }
+  .maplibregl-ctrl-attrib-button {
+    @apply bg-transparent! dark:invert;
+  }
+}

@@ -1,5 +1,7 @@
 import { defineConfig, loadEnv, type Plugin, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import { fileURLToPath } from "node:url";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 /**
@@ -65,5 +67,8 @@ function devApi(): Plugin {
 
 export default defineConfig(({ mode }) => {
   Object.assign(process.env, loadEnv(mode, process.cwd(), ""));
-  return { plugins: [react(), devApi()] };
+  return {
+    plugins: [react(), tailwindcss(), devApi()],
+    resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+  };
 });
