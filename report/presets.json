@@ -1,0 +1,26 @@
+{
+ "Wards With Most Potholes": {
+  "sql": "SELECT ward AS ward,\n       count(*) AS count\nFROM   problems p\nWHERE  has_location\n  AND  category IN ('Potholes')\nGROUP BY ward\nORDER BY count DESC NULLS LAST\nLIMIT 10;"
+ },
+ "Potholes by Month": {
+  "sql": "SELECT to_char(reported_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM') AS month,\n       count(*) AS count\nFROM   problems p\nWHERE  has_location\n  AND  category IN ('Potholes')\nGROUP BY to_char(reported_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM')\nORDER BY 1;"
+ },
+ "Slowest Categories To Fix": {
+  "sql": "SELECT category AS category,\n       percentile_cont(0.5) WITHIN GROUP (ORDER BY days_to_close) FILTER (WHERE status = 'Resolved') AS median_days,\n       count(*) AS complaints\nFROM   problems p\nWHERE  has_location\nGROUP BY category\nHAVING count(*) >= 100\nORDER BY median_days DESC NULLS LAST;"
+ },
+ "Wards With Lowest Fix Rate": {
+  "sql": "SELECT ward AS ward,\n       round(100.0 * count(*) FILTER (WHERE status = 'Resolved') / nullif(count(*) FILTER (WHERE status IN ('Resolved', 'Rejected')), 0), 1) AS fix_rate,\n       count(*) AS complaints\nFROM   problems p\nWHERE  has_location\nGROUP BY ward\nHAVING count(*) >= 200\nORDER BY fix_rate ASC NULLS LAST\nLIMIT 10;"
+ },
+ "Hotspot Wards per 100k": {
+  "sql": "SELECT ward AS ward,\n       round(count(*) * 100000.0 / w.population, 1) AS per_100k,\n       count(*) AS complaints\nFROM   problems p JOIN wards w USING (ward)\nWHERE  has_location\nGROUP BY ward, w.population\nORDER BY per_100k DESC NULLS LAST;\n-- then keep groups whose value \u2265 mean + 0.5 \u00d7 standard deviation"
+ },
+ "Open Backlog by Category": {
+  "sql": "SELECT category AS category,\n       count(*) FILTER (WHERE is_open) AS open_now,\n       count(*) AS complaints\nFROM   problems p\nWHERE  has_location\nGROUP BY category\nORDER BY open_now DESC NULLS LAST;"
+ },
+ "Complaints by Hour of Day": {
+  "sql": "SELECT extract(hour FROM reported_at AT TIME ZONE 'Asia/Kolkata') AS hour,\n       count(*) AS count\nFROM   problems p\nWHERE  has_location\nGROUP BY extract(hour FROM reported_at AT TIME ZONE 'Asia/Kolkata')\nORDER BY 1;"
+ },
+ "Filing Channel per Category": {
+  "sql": "SELECT category AS category,\n       channel AS channel,\n       count(*) AS count\nFROM   problems p\nWHERE  has_location\nGROUP BY category, channel\nORDER BY count DESC NULLS LAST;"
+ }
+}

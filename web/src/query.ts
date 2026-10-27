@@ -6,9 +6,9 @@ export const GROUPS: { value: GroupBy; label: string; sql: string }[] = [
   { value: "category", label: "Category", sql: "category" },
   { value: "subcategory", label: "Complaint Type", sql: "subcategory" },
   { value: "ward", label: "Ward", sql: "ward" },
-  { value: "month", label: "Month", sql: "to_char(reported_at, 'YYYY-MM')" },
-  { value: "weekday", label: "Weekday", sql: "to_char(reported_at, 'Dy')" },
-  { value: "hour", label: "Hour of Day (IST)", sql: "extract(hour FROM reported_at)" },
+  { value: "month", label: "Month", sql: "to_char(reported_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM')" },
+  { value: "weekday", label: "Weekday", sql: "to_char(reported_at AT TIME ZONE 'Asia/Kolkata', 'Dy')" },
+  { value: "hour", label: "Hour of Day (IST)", sql: "extract(hour FROM reported_at AT TIME ZONE 'Asia/Kolkata')" },
   { value: "status", label: "Status", sql: "status" },
   { value: "channel", label: "Filing Channel", sql: "channel" },
 ];
