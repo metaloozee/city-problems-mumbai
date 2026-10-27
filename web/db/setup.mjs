@@ -1,5 +1,5 @@
 // Creates the schema and loads the unified dataset into a PostgreSQL database (Neon in production).
-// Shared by `npm run db:setup` (scripts/db-setup.mjs) and the Vite dev server's local database.
+// Shared by `pnpm db:setup` (scripts/db-setup.mjs) and the Vite dev server's local database.
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { fileURLToPath } from "node:url";

@@ -9,6 +9,6 @@ export async function GET(): Promise<Response> {
     const [{ n }] = await db.sql(`SELECT count(*)::int AS n FROM problems WHERE source = 'citizen'`);
     return json({ database: db.kind, citizenReports: n });
   } catch (e) {
-    return json({ database: db.kind, error: "Database is configured but the query failed. Run npm run db:setup." }, 500);
+    return json({ database: db.kind, error: "Database is configured but the query failed. Run pnpm db:setup." }, 500);
   }
 }

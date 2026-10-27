@@ -50,8 +50,8 @@ Set up a Neon database:
 ```bash
 cd web
 cp .env.example .env.local      # paste your Neon connection string into DATABASE_URL
-npm install
-npm run db:setup                # creates tables, loads 26 wards and 112,094 BMC rows; safe to re-run
+pnpm install
+pnpm db:setup                    # creates tables, loads 26 wards and 112,094 BMC rows; safe to re-run
 ```
 
 Re-running `db:setup` updates BMC rows and never touches resident reports.
@@ -75,16 +75,16 @@ Without `DATABASE_URL`, the API returns 503 and the app saves reports in the vis
 
 ```bash
 cd web
-npm install
-npm run dev          # http://localhost:5173. API included; uses Neon if DATABASE_URL is set, else a local PGlite database in web/.data/
-npm run build        # type-checks app and API, then builds web/dist
+pnpm install
+pnpm dev              # http://localhost:5173. API included; uses Neon if DATABASE_URL is set, else a local PGlite database in web/.data/
+pnpm build            # type-checks app and API, then builds web/dist
 ```
 
 ## Deploy on Vercel
 
 - Import the repo and set **Root Directory** to `web`. Framework preset: Vite.
 - Add `DATABASE_URL` and `REPORTER_SALT` under Environment Variables.
-- Run `npm run db:setup` once from your machine against the same database.
+- Run `pnpm db:setup` once from your machine against the same database.
 
 ## Layout
 

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 /**
- * Serves the Vercel functions in web/api/ during `npm run dev`, so the app works locally exactly as deployed.
+ * Serves the Vercel functions in web/api/ during `pnpm dev`, so the app works locally exactly as deployed.
  * Without DATABASE_URL it starts a local PGlite database in web/.data/ (schema + wards only) for citizen reports.
  */
 function devApi(): Plugin {

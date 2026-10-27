@@ -1,5 +1,5 @@
-// Usage:  DATABASE_URL=postgres://… npm run db:setup            schema + wards + all BMC problems
-//         DATABASE_URL=postgres://… npm run db:setup -- --schema-only
+// Usage:  DATABASE_URL=postgres://… pnpm db:setup                schema + wards + all BMC problems
+//         DATABASE_URL=postgres://… pnpm db:setup --schema-only
 // Reads DATABASE_URL from the environment or from web/.env.local.
 import { existsSync, readFileSync } from "node:fs";
 import { neon } from "@neondatabase/serverless";

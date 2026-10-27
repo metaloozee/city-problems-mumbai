@@ -11,7 +11,7 @@ declare global {
 
 let cached: Db | null = null;
 
-/** Neon in production (DATABASE_URL), a local PGlite database in `npm run dev`, otherwise null. */
+/** Neon in production (DATABASE_URL), a local PGlite database in `pnpm dev`, otherwise null. */
 export function getDb(): Db | null {
   if (cached) return cached;
   const url = process.env.DATABASE_URL;
