@@ -33,6 +33,49 @@ NAMES = ["Ayan Parkar (63)", "Sourabh Patel (64)", "Mohammed Owaiz Shaikh (65)"]
 TOC = ["1. Introduction", "2. System Architecture", "3. Implementation", "Technologies Used", "4. Results", "5. Conclusion", "6. References"]
 
 
+# ---------------------------------------------------------------- references (IEEE)
+# Numbered in order of first citation in the text, as IEEE requires. *text* is set in italics.
+WEB, DATA = "Accessed: Oct. 27, 2026", "Accessed: Oct. 11, 2026"
+REFS = {
+    "guide": "Dept. Comput. Eng., Shree L. R. Tiwari Coll. Eng., Mira Road, Thane, India, “BDA mini project guidelines,” unpublished.",
+    "marg": f"Brihanmumbai Municipal Corporation, “MARG_Application_Prod (MapServer): layers 0 COMPLAINTS_REGISTRATION, 16 POTHOLE_REGISTRATION and 2 Ward_Boundary,” MARG ArcGIS REST Services Directory, 2026. {DATA}. [Online]. Available: https://marg.mcgm.gov.in/server/rest/services/MARG_APP/MARG_Application_Prod/MapServer",
+    "dash": f"Brihanmumbai Municipal Corporation, “Pothole QuickFix dashboard,” BMC MARG. {DATA}. [Online]. Available: https://marg.mcgm.gov.in/BMC_C_Pothole_Dashboard/",
+    "praja": "Praja Foundation, “Report on the status of civic services, environmental and climate issues in Mumbai 2026,” Praja Found., Mumbai, India, 2026. [Online]. Available: https://praja.org/praja_docs/praja_downloads/Report%20on%20the%20Status%20of%20Civic%20Services,%20Environmental%20and%20Climate%20Issues%20in%20Mumbai%202026.pdf",
+    "pandas": "W. McKinney, “Data structures for statistical computing in Python,” in *Proc. 9th Python Sci. Conf. (SciPy)*, Austin, TX, USA, 2010, pp. 56–61, doi: 10.25080/Majora-92bf1922-00a.",
+    "shapely": f"S. Gillies et al., *Shapely*. (Version 2.2.0). {WEB}. [Online]. Available: https://shapely.readthedocs.io/",
+    "mpl": "J. D. Hunter, “Matplotlib: A 2D graphics environment,” *Comput. Sci. Eng.*, vol. 9, no. 3, pp. 90–95, May/Jun. 2007, doi: 10.1109/MCSE.2007.55.",
+    "react": f"Meta Open Source, *React*. (Version 19.3.1). {WEB}. [Online]. Available: https://react.dev/",
+    "vite": f"Vite Team, *Vite*. (Version 8.3.5). {WEB}. [Online]. Available: https://vite.dev/",
+    "vercel": f"Vercel Inc., “Vercel Functions,” Vercel Documentation. {WEB}. [Online]. Available: https://vercel.com/docs/functions",
+    "neon": f"Neon, “Neon serverless driver,” Neon Documentation. {WEB}. [Online]. Available: https://neon.com/docs/serverless/serverless-driver",
+    "pglite": f"ElectricSQL, *PGlite*. (Version 0.5.12). {WEB}. [Online]. Available: https://pglite.dev/",
+    "nominatim": f"OpenStreetMap Foundation, “Search,” Nominatim Documentation. {WEB}. [Online]. Available: https://nominatim.org/release-docs/latest/api/Search/",
+    "maplibre": f"MapLibre Organization, *MapLibre GL JS*. (Version 6.16.0). {WEB}. [Online]. Available: https://maplibre.org/",
+    "mapcn": f"“mapcn: Map components for shadcn/ui,” mapcn. {WEB}. [Online]. Available: https://mapcn.dev/",
+    "papa": f"M. Holt, *Papa Parse*. (Version 5.7.0). {WEB}. [Online]. Available: https://www.papaparse.com/",
+    "tailwind": f"Tailwind Labs, *Tailwind CSS*. (Version 4.3.3). {WEB}. [Online]. Available: https://tailwindcss.com/",
+    "shadcn": f"shadcn, *shadcn/ui*. (2026). {WEB}. [Online]. Available: https://ui.shadcn.com/",
+    "carto": f"CARTO, “Basemaps,” CARTO. {WEB}. [Online]. Available: https://carto.com/basemaps",
+    "osm": f"OpenStreetMap contributors, “Copyright and license,” OpenStreetMap. {WEB}. [Online]. Available: https://www.openstreetmap.org/copyright",
+    "recharts": f"Recharts Group, *Recharts*. (Version 3.10.1). {WEB}. [Online]. Available: https://recharts.org/",
+    "tldraw": f"tldraw Inc., *tldraw*. (Version 3.15.6). {WEB}. [Online]. Available: https://tldraw.dev/",
+}
+CITED: dict[str, int] = {}
+
+
+def cite(text):
+    """Replace {{key}} or {{k1,k2}} with IEEE numbers [1] or [1], [2], numbering by first appearance."""
+    def num(m):
+        out = []
+        for k in m.group(1).split(","):
+            if k not in REFS:
+                raise KeyError(f"unknown reference {k}")
+            CITED.setdefault(k, len(CITED) + 1)
+            out.append(f"[{CITED[k]}]")
+        return ", ".join(out)
+    return re.sub(r"\{\{([\w,]+)\}\}", num, text)
+
+
 # ---------------------------------------------------------------- helpers
 def run_font(run, size=12, bold=False, italic=False, font=FONT, color=(0, 0, 0)):
     run.bold, run.italic = bold, italic
@@ -48,7 +91,7 @@ def para(doc, text="", *, size=12, bold=False, italic=False, align="left", befor
     f.space_before, f.space_after, f.line_spacing = Pt(before), Pt(after), spacing
     f.page_break_before, f.keep_with_next = page_break, keep_next
     if text:
-        run_font(p.add_run(text), size, bold, italic)
+        run_font(p.add_run(cite(text)), size, bold, italic)
     return p
 
 
@@ -61,7 +104,7 @@ def rich(doc, parts, *, after=6, spacing=1.35, indent=0):
     if indent:
         p.paragraph_format.left_indent = Cm(indent)
     for text, bold in parts:
-        run_font(p.add_run(text), 12, bold)
+        run_font(p.add_run(cite(text)), 12, bold)
     return p
 
 
@@ -171,6 +214,7 @@ def header_footer(section):
 
 # ---------------------------------------------------------------- content
 def build(toc_pages):
+    CITED.clear()
     doc = Document()
     s = doc.sections[0]
     s.page_width, s.page_height = Cm(21.0), Cm(29.7)
@@ -248,7 +292,7 @@ def build(toc_pages):
               "location, tapping the map or choosing a ward. The app then shows open problems nearby, how quickly BMC fixes problems in that "
               "ward compared with the rest of the city, and what neighbours have reported. Residents can report a new problem by placing a pin "
               "on the map. An analyst view, the Data Explorer, keeps the group-by and aggregation workbench of the first version and shows the "
-              "equivalent PostgreSQL query for every result.")
+              "equivalent PostgreSQL query for every result. The project follows the department’s BDA mini-project guidelines {{guide}}.")
     sub(doc, "1.1 Big data perspective")
     bullet(doc, "Volume", "124,146 raw records were downloaded (112,086 general complaints and 12,060 pothole records). After joining and "
                           "cleaning they form one table of 112,094 complaints, of which 96,998 have a real map location.")
@@ -269,19 +313,18 @@ def build(toc_pages):
     # 2. System Architecture
     chapter(doc, "2. System Architecture")
     sub(doc, "2.1 Data source")
-    body(doc, "The data comes from the public MARG ArcGIS REST service of BMC, the same service used by BMC’s own Pothole QuickFix "
-              "dashboard (https://marg.mcgm.gov.in/BMC_C_Pothole_Dashboard/). The endpoint is "
-              "https://marg.mcgm.gov.in/server/rest/services/MARG_APP/MARG_Application_Prod/MapServer. Three layers are used:")
+    body(doc, "The data comes from the public MARG ArcGIS REST service of BMC {{marg}}, the same service used by BMC’s own Pothole QuickFix "
+              "dashboard {{dash}}. Three layers are used:")
     bullet(doc, "Layer 0 COMPLAINTS_REGISTRATION", "112,086 complaints from every department and every filing channel, each with its own latitude and longitude.")
     bullet(doc, "Layer 16 POTHOLE_REGISTRATION", "12,060 pothole records from Pothole QuickFix, with road type and an invalid flag.")
     bullet(doc, "Layer 2 Ward_Boundary", "26 ward polygons with a population field.")
     body(doc, "Licence note: BMC states no explicit open-data licence on this service. It is public, unauthenticated government data and is "
               "used here only for non-commercial academic purposes with attribution to BMC/MCGM. Only non-personal fields were downloaded "
               "(no phone numbers, free-text descriptions, officer or contractor names, or photos). Other candidate datasets were reviewed and "
-              "not used: the Kaggle “1.2M Complaints BMC” set is documented as synthetic, Praja Foundation’s 2026 civic report "
+              "not used: the Kaggle “1.2M Complaints BMC” set is documented as synthetic, Praja Foundation’s 2026 civic report {{praja}} "
               "publishes city-level totals in PDF form rather than individual complaints, and OpenCity’s grievance data covers Bengaluru.")
     sub(doc, "2.2 Data pipeline (scripts/download_raw.py, scripts/build_dataset.py, scripts/eda.py)")
-    body(doc, "Figure 1 shows the pipeline. The main decisions, each backed by the exploratory analysis in data/eda/EDA.md, are:")
+    body(doc, "The pipeline is written in Python with pandas {{pandas}} and Shapely {{shapely}}; the EDA charts use Matplotlib {{mpl}}. Figure 1 shows the pipeline. The main decisions, each backed by the exploratory analysis in data/eda/EDA.md, are:")
     steps = [
         ("One register, not two", "12,037 of the 12,060 pothole records carry the same complaint ID as a layer 0 complaint, so the layers are two views of one register. They are joined on ID and the pothole fields are copied onto the layer 0 row. 9 pothole-only records are added and 10 without an ID are dropped. The first version stacked both layers and de-duplicated, which silently discarded the pothole fields."),
         ("Closed is not the same as fixed", "BMC marks 24,626 complaints as CLOSED while also flagging them INVALID. The first version counted them as resolved. The unified status separates Resolved (52,261) from Rejected (24,626), and the fix rate is Resolved ÷ (Resolved + Rejected)."),
@@ -299,11 +342,11 @@ def build(toc_pages):
               "data/processed/wards.csv and data/prepare_stats.json with the row counts for every step.")
 
     sub(doc, "2.3 Application architecture")
-    body(doc, "The web application is a React single-page app built with Vite and deployed on Vercel with web/ as the project root (Figure 2). "
+    body(doc, "The web application is a React {{react}} single-page app built with Vite {{vite}} and deployed on Vercel {{vercel}} with web/ as the project root (Figure 2). "
               "BMC complaints are served as a static CSV from the CDN and analysed in the browser, which keeps the map fast without a "
-              "database round trip. Resident reports go through Vercel functions in web/api/ to a Neon PostgreSQL database, which also holds "
+              "database round trip. Resident reports go through Vercel functions in web/api/ to a Neon PostgreSQL database {{neon}}, which also holds "
               "the full unified dataset for SQL analysis. During local development the same functions run inside the Vite dev server against "
-              "an embedded PGlite database, and without a database the app saves reports on the visitor’s device and says so.")
+              "an embedded PGlite database {{pglite}}, and without a database the app saves reports on the visitor’s device and says so.")
     figure(doc, D / "architecture.png", "Fig. 2: System architecture: offline pipeline, storage, Vercel deployment and external map services")
 
     sub(doc, "2.4 Database design")
@@ -315,11 +358,11 @@ def build(toc_pages):
 
     sub(doc, "2.5 Main modules")
     for k, v in [
-        ("views/AreaView.tsx", "My Area: place search, location, ward picker, ward statistics with rank and city comparison, and the list of problems within 250 m, 500 m or 1 km."),
+        ("views/AreaView.tsx", "My Area: place search through Nominatim {{nominatim}}, location, ward picker, ward statistics with rank and city comparison, and the list of problems within 250 m, 500 m or 1 km."),
         ("views/ReportView.tsx", "Report a Problem: centre-pin placement, category, description and landmark, validation messages and the tracking ID."),
         ("views/OverviewView.tsx", "Ward Rankings: all wards ranked and mapped by fix rate, median days to fix, open complaints or complaints per 100,000 residents."),
         ("views/ExplorerView.tsx, query.ts", "Data Explorer: filters, group by, split by, measure, Top-N, minimum group size, hotspot rule, chart, table, CSV export and the equivalent SQL."),
-        ("components/MapView.tsx", "MapLibre GL map (mapcn component) with GPU clustering of complaints, resident-report markers, ward outlines and the choropleth."),
+        ("components/MapView.tsx", "MapLibre GL map {{maplibre}} (mapcn component {{mapcn}}) with GPU clustering of complaints, resident-report markers, ward outlines and the choropleth."),
         ("api/reports, api/_lib", "Vercel functions: list, create and support resident reports; validation, rate limit and server-side ward assignment."),
         ("shared/", "Code used by both the app and the API: categories, ward outlines and point-in-polygon geometry."),
     ]:
@@ -362,6 +405,7 @@ df["reported_at"] = (pd.to_datetime(ms, unit="ms", utc=True)
                      .dt.tz_convert("Asia/Kolkata"))
 df["has_location"] = inside_mumbai & ~on_placeholder_point''')
     sub(doc, "3.3 Loading the data in the browser")
+    body(doc, "The browser fetches the compact CSV once and parses it with Papa Parse {{papa}}.")
     code(doc, '''export async function loadProblems(): Promise<Problem[]> {
   const res = await fetch(`${import.meta.env.BASE_URL}data/problems.csv`);
   const parsed = Papa.parse<Record<string, string>>(await res.text(),
@@ -436,17 +480,17 @@ df["has_location"] = inside_mumbai & ~on_placeholder_point''')
     # Technologies
     chapter(doc, "Technologies Used")
     for k, v in [
-        ("React 19, Vite and TypeScript", "Single-page application, typed data models and the production build."),
-        ("Tailwind CSS v4 and shadcn/ui (Radix UI)", "Styling and accessible interface components: buttons, selects, toggles, drawers, popovers and tables."),
-        ("MapLibre GL with the mapcn component and CARTO basemaps", "Vector map rendering, GPU clustering of 97,000 points, ward outlines and choropleths."),
-        ("Recharts with evilcharts components", "Bar, stacked bar and line charts in the Data Explorer."),
-        ("PapaParse", "CSV parsing in the browser."),
-        ("OpenStreetMap Nominatim", "Place search limited to Mumbai."),
-        ("Vercel Functions and Neon PostgreSQL", "API for resident reports and the database that stores the unified dataset and reports (@neondatabase/serverless driver)."),
-        ("PGlite", "Embedded PostgreSQL used by the local development server and for testing the database seed."),
-        ("Python 3, pandas, Shapely and Matplotlib", "Data acquisition, cleaning, joining, point-in-polygon ward assignment and EDA charts."),
-        ("BMC MARG ArcGIS REST service", "Source of complaint records, pothole records and ward boundaries."),
-        ("tldraw", "Architecture, pipeline, schema and flow diagrams in this report."),
+        ("React 19, Vite and TypeScript", "Single-page application, typed data models and the production build {{react,vite}}."),
+        ("Tailwind CSS v4 and shadcn/ui (Radix UI)", "Styling and accessible interface components: buttons, selects, toggles, drawers, popovers and tables {{tailwind,shadcn}}."),
+        ("MapLibre GL with the mapcn component and CARTO basemaps", "Vector map rendering, GPU clustering of 97,000 points, ward outlines and choropleths {{maplibre,mapcn,carto}}. Map data © OpenStreetMap contributors {{osm}}."),
+        ("Recharts with evilcharts components", "Bar, stacked bar and line charts in the Data Explorer {{recharts}}."),
+        ("PapaParse", "CSV parsing in the browser {{papa}}."),
+        ("OpenStreetMap Nominatim", "Place search limited to Mumbai {{nominatim}}."),
+        ("Vercel Functions and Neon PostgreSQL", "API for resident reports and the database that stores the unified dataset and reports (@neondatabase/serverless driver) {{vercel,neon}}."),
+        ("PGlite", "Embedded PostgreSQL used by the local development server and for testing the database seed {{pglite}}."),
+        ("Python 3, pandas, Shapely and Matplotlib", "Data acquisition, cleaning, joining, point-in-polygon ward assignment and EDA charts {{pandas,shapely,mpl}}."),
+        ("BMC MARG ArcGIS REST service", "Source of complaint records, pothole records and ward boundaries {{marg}}."),
+        ("tldraw", "Architecture, pipeline, schema and flow diagrams in this report {{tldraw}}."),
         ("pnpm and Playwright", "Package management, and browser testing and screenshots of the app."),
     ]:
         para(doc, k, bold=True, before=6, after=1, keep_next=True)
@@ -525,24 +569,18 @@ df["has_location"] = inside_mumbai & ~on_placeholder_point''')
 
     # 6. References
     chapter(doc, "6. References")
-    refs = [
-        "Brihanmumbai Municipal Corporation (MCGM), MARG ArcGIS REST service, https://marg.mcgm.gov.in/server/rest/services/MARG_APP/MARG_Application_Prod/MapServer (accessed 11 Oct 2026).",
-        "BMC Pothole QuickFix Dashboard, https://marg.mcgm.gov.in/BMC_C_Pothole_Dashboard/ (accessed 2026).",
-        "Praja Foundation, Report on the Status of Civic Services, Environmental and Climate Issues in Mumbai, 2026, https://praja.org/.",
-        "MapLibre GL JS, https://maplibre.org/; mapcn map components, https://mapcn.dev/.",
-        "CARTO basemaps, https://carto.com/basemaps/; OpenStreetMap contributors, https://www.openstreetmap.org/copyright.",
-        "Nominatim, OpenStreetMap geocoding service, https://nominatim.org/.",
-        "Neon serverless PostgreSQL, https://neon.tech/docs/; PGlite, https://pglite.dev/.",
-        "Vercel Functions documentation, https://vercel.com/docs/functions.",
-        "React, https://react.dev/; Vite, https://vite.dev/; Tailwind CSS, https://tailwindcss.com/; shadcn/ui, https://ui.shadcn.com/.",
-        "Recharts, https://recharts.org/; PapaParse, https://www.papaparse.com/.",
-        "S. Gillies et al., Shapely: manipulation and analysis of geometric objects, https://shapely.readthedocs.io/.",
-        "W. McKinney, “Data Structures for Statistical Computing in Python,” Proc. 9th Python in Science Conf., 2010 (pandas).",
-        "tldraw, infinite canvas SDK, https://tldraw.dev/.",
-        "Shree L. R. Tiwari College of Engineering, Department of Computer Engineering, BDA Mini Project guidelines (internal).",
-    ]
-    for i, r in enumerate(refs, 1):
-        para(doc, f"{i}. {r}", after=10, spacing=1.3)
+    missing = set(REFS) - set(CITED)
+    if missing:
+        raise SystemExit(f"References never cited in the text: {sorted(missing)}")
+    for key, n in sorted(CITED.items(), key=lambda kv: kv[1]):
+        p = para(doc, after=8, spacing=1.2)
+        f = p.paragraph_format
+        f.left_indent, f.first_line_indent = Cm(1.0), Cm(-1.0)
+        f.tab_stops.add_tab_stop(Cm(1.0))
+        run_font(p.add_run(f"[{n}]\t"), 11)
+        for i, part in enumerate(REFS[key].split("*")):
+            if part:
+                run_font(p.add_run(part), 11, italic=bool(i % 2))
 
     doc.save(OUT)
 
