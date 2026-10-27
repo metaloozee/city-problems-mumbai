@@ -1,0 +1,27 @@
+ward,name,areas,zone,population
+A,A,"Colaba, Fort, Cuffe Parade",I,185014
+B,B,"Dongri, Masjid Bunder, Sandhurst Road",I,127290
+C,C,"Marine Lines, Kalbadevi, Bhuleshwar",I,166161
+D,D,"Grant Road, Malabar Hill, Tardeo",I,346866
+E,E,"Byculla, Mazgaon, Agripada",I,392867
+FN,F/North,"Matunga, Sion, Wadala",II,530029
+FS,F/South,"Parel, Sewri, Lalbaug",II,360396
+GN,G/North,"Dadar, Mahim, Dharavi",II,583446
+GS,G/South,"Worli, Prabhadevi, Lower Parel",II,393342
+HE,H/East,"Bandra East, Khar East, Santacruz East",III,557239
+HW,H/West,"Bandra West, Khar West, Santacruz West",III,329487
+KN,K/North,"Jogeshwari East, Marol",III,440613
+KS,K/South,"Andheri East, Vile Parle East",III,383272
+KW,K/West,"Andheri West, Vile Parle West, Juhu",IV,713317
+L,L,"Kurla, Sakinaka, Chandivali",V,899042
+ME,M/East,"Govandi, Mankhurd, Deonar",V,814543
+MW,M/West,"Chembur, Tilak Nagar",V,405070
+N,N,"Ghatkopar, Vikhroli",VI,626444
+PE,P/East,Malad East,IV,511891
+PS,P/South,Goregaon,IV,467790
+PW,P/West,"Malad West, Marve, Madh",IV,447704
+RC,R/Central,Borivali,VII,562711
+RN,R/North,Dahisar,VII,431368
+RS,R/South,Kandivali,VII,681633
+S,S,"Bhandup, Powai, Kanjurmarg",VI,744080
+T,T,Mulund,VI,340758

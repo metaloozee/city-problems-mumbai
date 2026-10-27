@@ -1,61 +1,70 @@
-import { WEEKDAYS } from "./data";
-import type { Complaint, Filters, GroupBy, Metric, QuerySpec, WardInfo } from "./types";
+import { WEEKDAYS, WARDS, wardLabel } from "./data";
+import { median } from "./stats";
+import type { Filters, GroupBy, Metric, Problem, QuerySpec } from "./types";
 
 export const GROUPS: { value: GroupBy; label: string; sql: string }[] = [
   { value: "category", label: "Category", sql: "category" },
-  { value: "subcategory", label: "Sub-category (complaint type)", sql: "subcategory" },
+  { value: "subcategory", label: "Complaint Type", sql: "subcategory" },
   { value: "ward", label: "Ward", sql: "ward" },
-  { value: "zone", label: "Zone", sql: "zone" },
-  { value: "month", label: "Month", sql: "SUBSTR(date, 1, 7)" },
-  { value: "weekday", label: "Weekday", sql: "STRFTIME('%w', date)" },
+  { value: "month", label: "Month", sql: "to_char(reported_at, 'YYYY-MM')" },
+  { value: "weekday", label: "Weekday", sql: "to_char(reported_at, 'Dy')" },
+  { value: "hour", label: "Hour of Day (IST)", sql: "extract(hour FROM reported_at)" },
   { value: "status", label: "Status", sql: "status" },
-  { value: "source", label: "Filing channel", sql: "source" },
+  { value: "channel", label: "Filing Channel", sql: "channel" },
 ];
-export const METRICS: { value: Metric; label: string; sql: string; unit: string }[] = [
-  { value: "count", label: "Count of complaints", sql: "COUNT(*)", unit: "complaints" },
-  { value: "avg_res_days", label: "Avg resolution days (closed)", sql: "ROUND(AVG(res_days), 1)", unit: "days" },
-  { value: "pct_resolved", label: "% resolved (closed)", sql: "ROUND(100.0 * SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) / COUNT(*), 1)", unit: "%" },
-  { value: "per_100k", label: "Complaints per 100k residents (ward only)", sql: "ROUND(COUNT(*) * 100000.0 / w.population, 1)", unit: "per 100k" },
+export const METRICS: { value: Metric; label: string; sql: string }[] = [
+  { value: "count", label: "Complaints", sql: "count(*)" },
+  { value: "open_now", label: "Open Now", sql: "count(*) FILTER (WHERE is_open)" },
+  { value: "fix_rate", label: "Fix Rate %", sql: "round(100.0 * count(*) FILTER (WHERE status = 'Resolved') / nullif(count(*) FILTER (WHERE status IN ('Resolved', 'Rejected')), 0), 1)" },
+  { value: "median_days", label: "Median Days To Fix", sql: "percentile_cont(0.5) WITHIN GROUP (ORDER BY days_to_close) FILTER (WHERE status = 'Resolved')" },
+  { value: "per_100k", label: "Per 100k Residents (Ward Only)", sql: "round(count(*) * 100000.0 / w.population, 1)" },
 ];
+export const effectiveMetric = (s: QuerySpec): Metric => (s.metric === "per_100k" && s.groupBy !== "ward" ? "count" : s.metric);
 
-export function groupKey(r: Complaint, g: GroupBy): string {
+export function groupKey(r: Problem, g: GroupBy): string {
   switch (g) {
     case "weekday": return WEEKDAYS[r.weekday];
-    default: return String((r as any)[g] ?? "");
+    case "hour": return String(r.hour).padStart(2, "0");
+    case "ward": return wardLabel(r.ward);
+    default: return String(r[g] ?? "");
   }
 }
 
-export function applyFilters(rows: Complaint[], f: Filters): Complaint[] {
-  const cats = f.categories.length ? new Set(f.categories) : null;
-  const wards = f.wards.length ? new Set(f.wards) : null;
-  const sts = f.statuses.length ? new Set(f.statuses) : null;
-  const q = f.search.trim().toLowerCase();
-  return rows.filter(
-    (r) =>
-      (!cats || cats.has(r.category)) && (!wards || wards.has(r.ward)) && (!sts || sts.has(r.status)) &&
-      (!f.from || r.date >= f.from) && (!f.to || r.date <= f.to) &&
-      (!f.minDelay || (r.resDays !== null && r.resDays >= f.minDelay)) &&
-      (!q || r.subcategory.toLowerCase().includes(q)),
-  );
+/** Returns a message when the date range is impossible, so the UI can say so instead of showing zero rows. */
+export function dateRangeError(f: Filters): string {
+  return f.from && f.to && f.from > f.to ? "The start date is after the end date. Change one of them." : "";
 }
 
-interface Acc { n: number; closed: number; sum: number; k: number }
-const newAcc = (): Acc => ({ n: 0, closed: 0, sum: 0, k: 0 });
-function add(a: Acc, r: Complaint) {
+export function applyFilters(rows: Problem[], f: Filters): Problem[] {
+  if (dateRangeError(f)) return rows.filter((r) => matches(r, { ...f, from: "", to: "" }));
+  return rows.filter((r) => matches(r, f));
+}
+function matches(r: Problem, f: Filters): boolean {
+  const q = f.search.trim().toLowerCase();
+  return (!f.categories.length || f.categories.includes(r.category)) && (!f.wards.length || f.wards.includes(r.ward)) &&
+    (!f.statuses.length || f.statuses.includes(r.status)) && (!f.channels.length || f.channels.includes(r.channel)) &&
+    (!f.from || r.date >= f.from) && (!f.to || r.date <= f.to) && (!q || r.subcategory.toLowerCase().includes(q));
+}
+
+interface Acc { n: number; open: number; resolved: number; rejected: number; days: number[] }
+const newAcc = (): Acc => ({ n: 0, open: 0, resolved: 0, rejected: 0, days: [] });
+function add(a: Acc, r: Problem) {
   a.n++;
-  if (r.status === "Closed") a.closed++;
-  if (r.resDays !== null) { a.sum += r.resDays; a.k++; }
+  if (r.isOpen) a.open++;
+  if (r.status === "Resolved") { a.resolved++; if (r.daysToClose !== null) a.days.push(r.daysToClose); }
+  if (r.status === "Rejected") a.rejected++;
 }
 function value(a: Acc, m: Metric, pop?: number): number | null {
   switch (m) {
     case "count": return a.n;
-    case "avg_res_days": return a.k ? +(a.sum / a.k).toFixed(1) : null;
-    case "pct_resolved": return a.n ? +((100 * a.closed) / a.n).toFixed(1) : null;
+    case "open_now": return a.open;
+    case "fix_rate": return a.resolved + a.rejected ? +((100 * a.resolved) / (a.resolved + a.rejected)).toFixed(1) : null;
+    case "median_days": { const v = median(a.days); return v === null ? null : +v.toFixed(1); }
     case "per_100k": return pop ? +((a.n * 100000) / pop).toFixed(1) : null;
   }
 }
 
-export interface QueryRow { key: string; value: number | null; count: number; split?: Record<string, number | null>; hot?: boolean }
+export interface QueryRow { key: string; value: number | null; count: number; split?: Record<string, number | null> }
 export interface QueryResult { rows: QueryRow[]; splitKeys: string[]; total: number; note?: string }
 
 function sortKeys(keys: string[], g: GroupBy) {
@@ -63,9 +72,10 @@ function sortKeys(keys: string[], g: GroupBy) {
   return keys.sort();
 }
 
-export function runQuery(rows: Complaint[], s: QuerySpec, wards: WardInfo[]): QueryResult {
-  const pop = new Map(wards.map((w) => [w.ward, w.population]));
-  const metric: Metric = s.metric === "per_100k" && s.groupBy !== "ward" ? "count" : s.metric;
+export function runQuery(rows: Problem[], s: QuerySpec): QueryResult {
+  const pop = new Map(WARDS.map((w) => [wardLabel(w.ward), w.population]));
+  const metric = effectiveMetric(s);
+  const topN = Math.max(0, Math.floor(s.topN) || 0), minCount = Math.max(0, Math.floor(s.minCount) || 0);
   const groups = new Map<string, Acc>();
   const splits = new Map<string, Map<string, Acc>>();
   const splitTotals = new Map<string, number>();
@@ -80,7 +90,7 @@ export function runQuery(rows: Complaint[], s: QuerySpec, wards: WardInfo[]): Qu
     }
   }
   let out: QueryRow[] = [...groups.entries()]
-    .filter(([, a]) => a.n >= s.minCount)
+    .filter(([, a]) => a.n >= minCount)
     .map(([key, a]) => ({ key, value: value(a, metric, pop.get(key)), count: a.n }));
   let note: string | undefined;
   if (s.hotspot) {
@@ -88,25 +98,24 @@ export function runQuery(rows: Complaint[], s: QuerySpec, wards: WardInfo[]): Qu
     const mean = vals.reduce((x, y) => x + y, 0) / (vals.length || 1);
     const sd = Math.sqrt(vals.reduce((x, y) => x + (y - mean) ** 2, 0) / (vals.length || 1));
     const thr = mean + 0.5 * sd;
-    out.forEach((o) => (o.hot = o.value !== null && o.value >= thr));
-    out = out.filter((o) => o.hot);
-    note = `Hotspot threshold: value ≥ mean + 0.5·σ = ${thr.toFixed(1)} (mean ${mean.toFixed(1)}, σ ${sd.toFixed(1)})`;
+    out = out.filter((o) => o.value !== null && o.value >= thr);
+    note = `Hotspot threshold: value ≥ mean + 0.5σ = ${thr.toFixed(1)} (mean ${mean.toFixed(1)}, σ ${sd.toFixed(1)})`;
   }
   if (s.order === "key") {
     const order = sortKeys(out.map((o) => o.key), s.groupBy);
     out.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+    if (topN > 0) out = out.slice(-topN);
   } else {
     const dir = s.order === "desc" ? -1 : 1;
-    out.sort((a, b) => dir * ((a.value ?? -Infinity) - (b.value ?? -Infinity)));
+    out.sort((a, b) => (a.value === null ? 1 : b.value === null ? -1 : dir * (a.value - b.value)));
+    if (topN > 0) out = out.slice(0, topN);
   }
-  if (s.topN > 0 && s.order !== "key") out = out.slice(0, s.topN);
-  if (s.topN > 0 && s.order === "key") out = out.slice(-s.topN);
   let splitKeys: string[] = [];
   if (s.splitBy !== "none") {
     splitKeys = sortKeys([...splitTotals.keys()], s.splitBy);
-    if (splitKeys.length > 8 && s.splitBy !== "weekday") {
-      splitKeys = [...splitTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map((e) => e[0]);
-      note = (note ? note + " · " : "") + "Split limited to the 8 largest groups.";
+    if (splitKeys.length > 6) {
+      splitKeys = [...splitTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map((e) => e[0]);
+      note = (note ? note + " · " : "") + "Split shows the 6 largest groups.";
     }
     for (const o of out) {
       o.split = {};
@@ -120,33 +129,33 @@ export function runQuery(rows: Complaint[], s: QuerySpec, wards: WardInfo[]): Qu
 }
 
 const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
+/** The equivalent PostgreSQL query against the Neon `problems` table. */
 export function toSql(f: Filters, s: QuerySpec): string {
   const g = GROUPS.find((x) => x.value === s.groupBy)!;
   const sp = s.splitBy === "none" ? null : GROUPS.find((x) => x.value === s.splitBy)!;
-  const metric: Metric = s.metric === "per_100k" && s.groupBy !== "ward" ? "count" : s.metric;
+  const metric = effectiveMetric(s);
   const m = METRICS.find((x) => x.value === metric)!;
-  const where: string[] = [];
+  const where = ["has_location"];
   if (f.categories.length) where.push(`category IN (${f.categories.map(q).join(", ")})`);
   if (f.wards.length) where.push(`ward IN (${f.wards.map(q).join(", ")})`);
   if (f.statuses.length) where.push(`status IN (${f.statuses.map(q).join(", ")})`);
-  if (f.from) where.push(`date >= ${q(f.from)}`);
-  if (f.to) where.push(`date <= ${q(f.to)}`);
-  if (f.minDelay) where.push(`res_days >= ${f.minDelay}`);
-  if (f.search.trim()) where.push(`LOWER(subcategory) LIKE ${q("%" + f.search.trim().toLowerCase() + "%")}`);
-  const cols = [`${g.sql} AS ${s.groupBy}`, ...(sp ? [`${sp.sql} AS ${s.splitBy}`] : []), `${m.sql} AS ${metric}`, ...(metric !== "count" ? ["COUNT(*) AS complaints"] : [])];
+  if (f.channels.length) where.push(`channel IN (${f.channels.map(q).join(", ")})`);
+  if (f.from && !dateRangeError(f)) where.push(`reported_at >= ${q(f.from)}`);
+  if (f.to && !dateRangeError(f)) where.push(`reported_at < ${q(f.to)}::date + 1`);
+  if (f.search.trim()) where.push(`subcategory ILIKE ${q("%" + f.search.trim() + "%")}`);
+  const cols = [`${g.sql} AS ${s.groupBy}`, ...(sp ? [`${sp.sql} AS ${s.splitBy}`] : []), `${m.sql} AS ${metric}`, ...(metric !== "count" ? ["count(*) AS complaints"] : [])];
   const having: string[] = [];
-  if (s.minCount > 0) having.push(`COUNT(*) >= ${s.minCount}`);
-  if (s.hotspot) having.push(`${metric} >= (SELECT AVG(${metric}) + 0.5 * STDDEV(${metric}) FROM per_group)  -- hotspot rule`);
+  if (s.minCount > 0) having.push(`count(*) >= ${Math.floor(s.minCount)}`);
   const lines = [
     `SELECT ${cols.join(",\n       ")}`,
-    `FROM   complaints${metric === "per_100k" ? " c JOIN wards w ON w.ward = c.ward" : ""}`,
-    ...(where.length ? [`WHERE  ${where.join("\n  AND  ")}`] : []),
-    `GROUP BY ${[g.sql, ...(sp ? [sp.sql] : [])].join(", ")}`,
-    ...(having.length ? [`HAVING ${having.join("\n   AND ")}`] : []),
-    `ORDER BY ${s.order === "key" ? g.sql : `${metric} ${s.order.toUpperCase()}`}`,
-    ...(s.topN > 0 ? [`LIMIT ${s.topN}`] : []),
+    `FROM   problems p${metric === "per_100k" ? " JOIN wards w USING (ward)" : ""}`,
+    `WHERE  ${where.join("\n  AND  ")}`,
+    `GROUP BY ${[g.sql, ...(sp ? [sp.sql] : []), ...(metric === "per_100k" ? ["w.population"] : [])].join(", ")}`,
+    ...(having.length ? [`HAVING ${having.join(" AND ")}`] : []),
+    `ORDER BY ${s.order === "key" ? "1" : `${metric} ${s.order.toUpperCase()} NULLS LAST`}`,
+    ...(s.topN > 0 ? [`LIMIT ${Math.floor(s.topN)}`] : []),
   ];
-  return lines.join("\n") + ";";
+  return lines.join("\n") + ";" + (s.hotspot ? "\n-- then keep groups whose value ≥ mean + 0.5 × standard deviation" : "");
 }
 
 export function toCsv(rows: Record<string, unknown>[]): string {
@@ -157,5 +166,6 @@ export function toCsv(rows: Record<string, unknown>[]): string {
 }
 export function download(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
-  const a = document.createElement("a"); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url);
+  const a = document.createElement("a"); a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

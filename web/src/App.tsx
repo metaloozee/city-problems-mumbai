@@ -1,213 +1,330 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 
-/** True when the viewport matches the CSS media query (used to switch to the mobile map-first layout). */
-function useMedia(q: string) {
-  const [m, setM] = useState(() => window.matchMedia(q).matches);
-  useEffect(() => {
-    const mq = window.matchMedia(q);
-    const h = () => setM(mq.matches);
-    mq.addEventListener("change", h); h();
-    return () => mq.removeEventListener("change", h);
-  }, [q]);
-  return m;
+import { BarChart3Icon, InfoIcon, MapPinIcon, PlusIcon, TrophyIcon } from "lucide-react";
+
+import { loadProblems, WARD_BY_CODE, wardLabel } from "./data";
+
+import { fetchReports, supportReport, type Backend } from "./api";
+
+import type { CitizenReport, Place, Problem } from "./types";
+
+import { wardAt } from "../shared/geo";
+
+import wardsGeo from "../shared/wards.geo";
+
+import { fmt } from "./stats";
+
+import AreaView from "./views/AreaView";
+
+import ReportView from "./views/ReportView";
+
+import OverviewView from "./views/OverviewView";
+
+import type { FoundPlace } from "./components/common";
+
+import { cn } from "@/lib/utils";
+
+import { Button, buttonVariants } from "@/components/ui/button";
+
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+import { Separator } from "@/components/ui/separator";
+
+import { Spinner } from "@/components/ui/spinner";
+
+import { TooltipProvider } from "@/components/ui/tooltip";
+
+import { useMedia } from "@/hooks/use-media";
+
+
+
+const ExplorerView = lazy(() => import("./views/ExplorerView"));
+
+
+
+type Route = "area" | "report" | "wards" | "explore";
+
+const ROUTES = [
+
+  { id: "area", label: "My Area", short: "My Area", icon: MapPinIcon },
+
+  { id: "wards", label: "Ward Rankings", short: "Wards", icon: TrophyIcon },
+
+  { id: "explore", label: "Data Explorer", short: "Explore", icon: BarChart3Icon },
+
+] as const;
+
+const PLACE_KEY = "cpm.place";
+
+
+
+function readRoute(): Route {
+
+  const r = window.location.hash.replace(/^#\/?/, "").split("?")[0];
+
+  return (["area", "report", "wards", "explore"] as Route[]).includes(r as Route) ? (r as Route) : "area";
+
 }
-import { loadData } from "./data";
-import type { Complaint, Filters, QuerySpec, WardInfo } from "./types";
-import { applyFilters, download, runQuery, toCsv, METRICS } from "./query";
-import MapView, { type MapMode } from "./components/MapView";
-import FiltersPanel from "./components/Filters";
-import QueryPanel from "./components/QueryPanel";
-import { PRESETS, type Preset } from "./presets";
 
-const EMPTY: Filters = { categories: [], wards: [], statuses: [], from: "", to: "", minDelay: 0, search: "" };
-const DEFAULT_SPEC: QuerySpec = PRESETS[0].spec;
-type ChoroMetric = "count" | "per_100k" | "avg_res_days" | "pct_resolved" | "query";
+function readPlace(): Place | null {
+
+  try {
+
+    const p = JSON.parse(localStorage.getItem(PLACE_KEY) ?? "null");
+
+    return p && WARD_BY_CODE.has(p.ward) ? p : null;
+
+  } catch { return null; }
+
+}
+
+
 
 export default function App() {
-  const [data, setData] = useState<{ rows: Complaint[]; geo: any; wards: WardInfo[] } | null>(null);
+
+  const [rows, setRows] = useState<Problem[] | null>(null);
+
   const [err, setErr] = useState("");
-  const [filters, setFilters] = useState<Filters>(EMPTY);
-  const [spec, setSpec] = useState<QuerySpec>(DEFAULT_SPEC);
-  const [activePreset, setActivePreset] = useState<string | null>(null);
-  const [mode, setMode] = useState<MapMode>("clusters");
-  const [choro, setChoro] = useState<ChoroMetric>("per_100k");
-  const isMobile = useMedia("(max-width: 820px)");
-  const [sheet, setSheet] = useState(false);
-  const [tab, setTab] = useState<"filters" | "query" | "about">("filters");
+
+  const [reports, setReports] = useState<CitizenReport[]>([]);
+
+  const [backend, setBackend] = useState<Backend>("device");
+
+  const [route, setRoute] = useState<Route>(readRoute);
+
+  const [place, setPlaceState] = useState<Place | null>(readPlace);
+
+  const dark = useMedia("(prefers-color-scheme: dark)");
+
+  useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
+
+
+
+  useEffect(() => { loadProblems().then(setRows).catch((e) => setErr(String(e.message ?? e))); }, []);
+
+  useEffect(() => { fetchReports().then(({ reports, backend }) => { setReports(reports); setBackend(backend); }); }, []);
+
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === "Escape") setSheet(false); };
-    window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
+
+    const h = () => { setRoute(readRoute()); window.scrollTo(0, 0); };
+
+    window.addEventListener("hashchange", h);
+
+    return () => window.removeEventListener("hashchange", h);
+
   }, []);
 
-  useEffect(() => { loadData().then(setData).catch((e) => setErr(String(e))); }, []);
+  const go = (r: Route) => { window.location.hash = `/${r}`; };
 
-  const rows = data?.rows ?? [];
-  const filtered = useMemo(() => applyFilters(rows, filters), [rows, filters]);
-  const result = useMemo(() => (data ? runQuery(filtered, spec, data.wards) : { rows: [], splitKeys: [], total: 0 }), [filtered, spec, data]);
 
-  const catList = useMemo(() => {
-    const m = new Map<string, number>();
-    rows.forEach((r) => m.set(r.category, (m.get(r.category) ?? 0) + 1));
-    return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ name, n }));
-  }, [rows]);
-  const statuses = useMemo(() => [...new Set(rows.map((r) => r.status))].sort(), [rows]);
-  const wardCodes = useMemo(() => (data?.wards.map((w) => w.ward) ?? []).sort(), [data]);
-  const [minDate, maxDate] = useMemo(() => {
-    let a = "9999", b = "";
-    for (const r of rows) { if (r.date < a) a = r.date; if (r.date > b) b = r.date; }
-    return [a, b];
-  }, [rows]);
 
-  const stats = useMemo(() => {
-    const n = filtered.length; let closed = 0, open = 0, s = 0, k = 0;
-    const w = new Map<string, number>(), c = new Map<string, number>();
-    for (const r of filtered) {
-      if (r.status === "Closed") closed++;
-      if (r.status === "In Progress" || r.status === "In Review" || r.status === "New") open++;
-      if (r.resDays !== null) { s += r.resDays; k++; }
-      w.set(r.ward, (w.get(r.ward) ?? 0) + 1); c.set(r.category, (c.get(r.category) ?? 0) + 1);
-    }
-    const top = (m: Map<string, number>) => [...m.entries()].sort((a, b) => b[1] - a[1])[0];
-    return { n, pctClosed: n ? (100 * closed) / n : 0, open, avg: k ? s / k : 0, topWard: top(w), topCat: top(c) };
-  }, [filtered]);
+  const setPlace = (p: Place | null) => {
 
-  const wardValues = useMemo(() => {
-    const out = new Map<string, number | null>();
-    if (!data) return out;
-    if (choro === "query") {
-      if (spec.groupBy === "ward") result.rows.forEach((r) => out.set(r.key, r.value));
-    } else {
-      runQuery(filtered, { groupBy: "ward", splitBy: "none", metric: choro, topN: 0, minCount: 20, order: "desc", hotspot: false }, data.wards).rows.forEach((r) => out.set(r.key, r.value));
-    }
-    return out;
-  }, [filtered, choro, data, result, spec.groupBy]);
-  const qMetric = METRICS.find((m) => m.value === (spec.metric === "per_100k" && spec.groupBy !== "ward" ? "count" : spec.metric))!;
-  const wardLabel = choro === "query" ? `Query: ${qMetric.label}` : METRICS.find((m) => m.value === choro)!.label.replace(" (ward only)", "");
+    setPlaceState(p);
 
-  const onWardClick = useCallback((w: string) => setFilters((f) => ({ ...f, wards: f.wards.includes(w) ? f.wards.filter((x) => x !== w) : [...f.wards, w] })), []);
-  const applyPreset = (p: Preset) => {
-    setFilters((f) => ({ ...f, categories: p.category ? [p.category] : [] }));
-    setSpec(p.spec); setActivePreset(p.id);
-    if (p.spec.groupBy === "ward") { setMode("choropleth"); setChoro("query"); }
+    try { p ? localStorage.setItem(PLACE_KEY, JSON.stringify(p)) : localStorage.removeItem(PLACE_KEY); } catch { /* storage blocked */ }
+
   };
-  const onSpec = (s: QuerySpec) => { setSpec(s); setActivePreset(null); };
-  const showOnMap = () => { setMode("choropleth"); setChoro("query"); };
-  const exportFiltered = () => download("filtered_complaints.csv", toCsv(filtered.map(({ month, weekday, ...r }) => ({ ...r }))));
 
-  if (err) return <div className="boot">Failed to load data: {err}</div>;
-  if (!data) return <div className="boot"><div className="spin" />Loading ~97k Mumbai civic complaints…</div>;
+  /** Sets the area from a point or a ward. Returns an error message when the point is outside every ward. */
 
-  const filtersEl = (
-    <FiltersPanel f={filters} set={(f) => { setFilters(f); setActivePreset(null); }} categories={catList} wards={wardCodes} statuses={statuses}
-      minDate={minDate} maxDate={maxDate} shown={filtered.length} total={rows.length} onReset={() => { setFilters(EMPTY); setActivePreset(null); }} />
-  );
-  const queryEl = <QueryPanel spec={spec} setSpec={onSpec} filters={filters} result={result} activePreset={activePreset} onPreset={applyPreset} showOnMap={showOnMap} />;
-  const modeLabel = (m: MapMode) => (m === "clusters" ? "Markers" : m === "heatmap" ? "Heatmap" : "Ward map");
-  const colourSelect = (
-    <label className="inline">Colour by
-      <select value={choro} onChange={(e) => setChoro(e.target.value as ChoroMetric)}>
-        <option value="count">Complaint count</option>
-        <option value="per_100k">Complaints per 100k residents</option>
-        <option value="avg_res_days">Avg resolution days</option>
-        <option value="pct_resolved">% resolved</option>
-        <option value="query" disabled={spec.groupBy !== "ward"}>Current query result (ward)</option>
-      </select>
-    </label>
-  );
-  const cardsEl = (
-    <>
-      <Card label="Complaints" value={stats.n.toLocaleString()} sub="matching filters" />
-      <Card label="Resolved" value={`${stats.pctClosed.toFixed(1)}%`} sub="status = Closed" />
-      <Card label="Still open" value={stats.open.toLocaleString()} sub="new / in review / in progress" />
-      <Card label="Avg days to close" value={stats.avg ? stats.avg.toFixed(1) : "–"} sub="closed complaints" />
-      <Card label="Busiest ward" value={stats.topWard ? `Ward ${stats.topWard[0]}` : "–"} sub={stats.topWard ? `${stats.topWard[1].toLocaleString()} complaints` : ""} />
-      <Card label="Top category" value={stats.topCat ? stats.topCat[0] : "–"} sub={stats.topCat ? `${stats.topCat[1].toLocaleString()} complaints` : ""} small />
-    </>
-  );
-  const footerText = (
-    <>Data: BMC / MCGM MARG public ArcGIS service (CCRS complaints + Pothole QuickFix), fetched Oct 2026 · Ward boundaries: same service · Map © OpenStreetMap contributors.
-    Resolution time = complaint date → date of attended (“after”) image. Not an official BMC product.</>
+  const choosePlace = (p: FoundPlace | { ward: string }): string | null => {
+
+    if ("ward" in p) { setPlace({ ward: p.ward }); return null; }
+
+    const ward = wardAt(wardsGeo.features, p.lat, p.lon);
+
+    if (!ward) return "That point is outside BMC's 26 wards. Pick a point on land inside Mumbai.";
+
+    setPlace({ ward, lat: +p.lat.toFixed(6), lon: +p.lon.toFixed(6), label: p.label });
+
+    return null;
+
+  };
+
+
+
+  const onSupport = useCallback(async (id: string): Promise<number | string> => {
+
+    try {
+
+      const { supporters, alreadySupported } = await supportReport(id);
+
+      setReports((list) => list.map((r) => (r.id === id ? { ...r, supporters } : r)));
+
+      return alreadySupported ? "You already added your voice" : supporters;
+
+    } catch (e) {
+
+      return (e as Error).message;
+
+    }
+
+  }, []);
+
+
+
+  const range = useMemo(() => {
+
+    if (!rows?.length) return { start: "", end: "" };
+
+    let a = rows[0].date, b = rows[0].date;
+
+    for (const r of rows) { if (r.date < a) a = r.date; if (r.date > b) b = r.date; }
+
+    return { start: a, end: b };
+
+  }, [rows]);
+
+
+
+  const boot = (children: React.ReactNode) => (
+
+    <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">{children}</div>
+
   );
 
-  if (isMobile) {
-    return (
-      <div className="m-root">
-        <div className="m-map">
-          <MapView rows={filtered} geo={data.geo} mode={mode} wardValues={wardValues} wardLabel={wardLabel} selectedWards={filters.wards} onWardClick={onWardClick} />
-        </div>
-        <div className="m-top">
-          <div className="m-title"><h1>🏙️ City Problems <span>· Mumbai</span></h1><span className="muted small">{filtered.length.toLocaleString()} shown</span></div>
-          <div className="m-modes">
-            <div className="seg">
-              {(["clusters", "heatmap", "choropleth"] as MapMode[]).map((m) => (
-                <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{modeLabel(m)}</button>
-              ))}
-            </div>
-            {mode === "choropleth" && colourSelect}
-          </div>
-          <div className="strip">{cardsEl}</div>
-        </div>
-        {!sheet && <button className="fab" onClick={() => setSheet(true)} aria-label="Open filters and queries">☰ Filters &amp; Queries{filters.categories.length + filters.wards.length + filters.statuses.length > 0 ? " •" : ""}</button>}
-        <div className={"sheet" + (sheet ? " open" : "")} role="dialog" aria-label="Filters and queries" aria-hidden={!sheet}>
-          <div className="sheet-bar">
-            <div className="tabs">
-              {([["filters", "Filters"], ["query", "Queries"], ["about", "About"]] as const).map(([k, l]) => (
-                <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>
-              ))}
-            </div>
-            <button className="btn close" onClick={() => setSheet(false)} aria-label="Close panel">✕</button>
-          </div>
-          <div className="sheet-body">
-            {sheet && tab === "filters" && filtersEl}
-            {sheet && tab === "query" && queryEl}
-            {sheet && tab === "about" && (
-              <section className="panel">
-                <button className="btn primary" onClick={exportFiltered}>Export filtered CSV ({filtered.length.toLocaleString()})</button>
-                <p>Real BMC complaints (potholes, garbage, drainage, water…) · {minDate} → {maxDate} · MyBMC MARG open service</p>
-                <footer>{footerText}</footer>
-              </section>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  let body: React.ReactNode;
+
+  if (err) body = boot(<p className="body-medium max-w-sm text-pretty">The complaint data did not load ({err}). Check your connection and reload the page.</p>);
+
+  else if (!rows) body = boot(<><Spinner className="size-6 text-primary" /><p className="body-medium text-muted-foreground">Loading 97,000 BMC complaints…</p></>);
+
+  else if (route === "report")
+
+    body = <ReportView rows={rows} reports={reports} place={place} backend={backend} dark={dark}
+
+      onCreated={(r) => setReports((l) => [r, ...l])}
+
+      onViewOnMap={(r) => { setPlace({ ward: r.ward, lat: r.lat, lon: r.lon, label: "Your report" }); go("area"); }} />;
+
+  else if (route === "wards")
+
+    body = <OverviewView rows={rows} dataEnd={range.end} dark={dark} onOpenWard={(w) => { setPlace({ ward: w }); go("area"); }} />;
+
+  else if (route === "explore")
+
+    body = <Suspense fallback={boot(<Spinner className="size-6 text-primary" />)}><ExplorerView rows={rows} dark={dark} /></Suspense>;
+
+  else
+
+    body = <AreaView rows={rows} reports={reports} dataStart={range.start} dataEnd={range.end} dark={dark} place={place}
+
+      choosePlace={choosePlace} clearPlace={() => setPlace(null)} onReportHere={() => go("report")} onSupport={onSupport} />;
+
+
 
   return (
-    <div className="app">
-      <header className="top">
-        <div>
-          <h1>🏙️ City Problems <span>· Mumbai</span></h1>
-          <p>Real BMC complaints (potholes, garbage, drainage, water…) · {minDate} → {maxDate} · MyBMC MARG open service</p>
-        </div>
-        <button className="btn primary" onClick={exportFiltered}>Export filtered CSV ({filtered.length.toLocaleString()})</button>
-      </header>
 
-      <section className="cards">{cardsEl}</section>
+    <TooltipProvider>
 
-      <main className="grid">
-        {filtersEl}
-        <section className="panel mapbox">
-          <div className="maptools">
-            <div className="seg">
-              {(["clusters", "heatmap", "choropleth"] as MapMode[]).map((m) => (
-                <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{modeLabel(m)}</button>
-              ))}
-            </div>
-            {mode === "choropleth" && colourSelect}
-            <span className="muted small">{mode === "choropleth" ? "Click a ward to filter by it" : `${filtered.length.toLocaleString()} points`}</span>
+      <div className="flex h-dvh flex-col">
+
+        <header className="z-30 flex h-14 shrink-0 items-center gap-6 border-b bg-card px-4 md:px-6">
+
+          <a className="label-large flex gap-1.5 whitespace-nowrap text-foreground no-underline" href="#/area" aria-label="City Problems Mumbai, home">
+
+            City Problems<span className="text-muted-foreground">Mumbai</span>
+
+          </a>
+
+          <nav className="hidden gap-1 md:flex" aria-label="Main">
+
+            {ROUTES.map((r) => (
+
+              <a key={r.id} href={`#/${r.id}`} aria-current={route === r.id ? "page" : undefined}
+
+                className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-muted-foreground aria-[current=page]:bg-accent aria-[current=page]:text-foreground")}>
+
+                {r.label}
+
+              </a>
+
+            ))}
+
+          </nav>
+
+          <div className="ml-auto flex items-center gap-2">
+
+            {rows && (
+
+              <Popover>
+
+                <PopoverTrigger asChild>
+
+                  <Button variant="ghost" size="icon" aria-label="About the data"><InfoIcon /></Button>
+
+                </PopoverTrigger>
+
+                <PopoverContent align="end" className="body-small flex w-80 flex-col gap-3 text-pretty">
+
+                  <div className="flex flex-col gap-1">
+
+                    <div className="label-medium">About the data</div>
+
+                    <p className="text-muted-foreground">BMC complaints from {fmt.date(range.start)} to {fmt.date(range.end)}, from the MARG public service (CCRS complaints and Pothole QuickFix).</p>
+
+                  </div>
+
+                  <p className="text-muted-foreground">
+
+                    {backend === "device"
+
+                      ? "The reports database is not connected, so resident reports are saved on this device only."
+
+                      : `${fmt.int(reports.length)} resident ${reports.length === 1 ? "report" : "reports"} on the map.`}
+
+                    {place ? <> Your area is {wardLabel(place.ward)}.</> : null}
+
+                  </p>
+
+                  <Separator />
+
+                  <p className="text-muted-foreground">An independent civic project, not an official BMC service. Reports filed here are not sent to BMC. Map © OpenStreetMap contributors, © CARTO.</p>
+
+                </PopoverContent>
+
+              </Popover>
+
+            )}
+
+            {route !== "report" && (
+
+              <Button asChild size="sm" className="md:h-10 md:px-4">
+
+                <a href="#/report"><PlusIcon data-icon="inline-start" /><span>Report<span className="max-md:hidden"> a Problem</span></span></a>
+
+              </Button>
+
+            )}
+
           </div>
-          <MapView rows={filtered} geo={data.geo} mode={mode} wardValues={wardValues} wardLabel={wardLabel} selectedWards={filters.wards} onWardClick={onWardClick} />
-        </section>
-      </main>
 
-      {queryEl}
+        </header>
 
-      <footer>{footerText}</footer>
-    </div>
+        <main className="relative min-h-0 flex-1 overflow-y-auto">{body}</main>
+
+        <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-[60] grid grid-cols-3 border-t bg-card pb-[env(safe-area-inset-bottom)] md:hidden">
+
+          {ROUTES.map((r) => (
+
+            <a key={r.id} href={`#/${r.id}`} aria-current={route === r.id ? "page" : undefined}
+
+              className="label-x-small flex h-14 flex-col items-center justify-center gap-0.5 text-muted-foreground no-underline aria-[current=page]:text-foreground">
+
+              <r.icon className="size-5" aria-hidden="true" />{r.short}
+
+            </a>
+
+          ))}
+
+        </nav>
+
+      </div>
+
+    </TooltipProvider>
+
   );
+
 }
 
-function Card({ label, value, sub, small }: { label: string; value: string; sub?: string; small?: boolean }) {
-  return <div className="card"><div className="cl">{label}</div><div className={"cv" + (small ? " sm" : "")}>{value}</div><div className="cs">{sub}</div></div>;
-}

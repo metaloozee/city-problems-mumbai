@@ -1,82 +1,110 @@
 # City Problems · Mumbai
 
-Interactive map + query workbench for **real Mumbai (BMC) civic complaints** – potholes, garbage, drainage & sewage,
-water supply, street lights, encroachment, trees, pests and more. Built for a Big Data Analysis (BDA) mini-project.
+A map for Mumbai residents to see civic problems near them, check how fast BMC fixes them in their ward, and report new problems by dropping a pin on the map.
 
-* Vite + React + TypeScript, Leaflet / react-leaflet (OpenStreetMap tiles – no API key), supercluster, leaflet.heat, Recharts
-* 100 % static: data is served as files from `web/public/data/`, all queries run in the browser → deploys to Vercel with no backend or secrets.
+It combines about 112,000 real BMC complaints (March to October 2026) with reports filed by residents in the app. The interface uses the Firecrawl design system tokens and components (`web/src/tokens.css`).
 
-## Features
-* **Map** – three modes: clustered markers (click a pin for details), heatmap, and ward choropleth (colour by count, complaints per 100k residents, avg resolution days, % resolved, or the *current query result*). Click a ward to filter by it.
-* **Filters** – category, status, ward, date range, "resolution delay ≥ N days" (severity proxy, closed complaints only), complaint-type text search.
-* **Summary cards** – total, % resolved, still open, avg days to close, busiest ward, top category.
-* **Query builder** – *group by* (category, sub-category, ward, zone, month, weekday, status, filing channel) × optional *split by* (stacked) × *metric* (count, avg resolution days, % resolved, complaints per 100k residents [ward only]) with Top-N, min-complaints-per-group (HAVING), ordering and a hotspot rule. Result is a chart + table, with the **equivalent SQL** printed above it. "Highlight on map" paints the ward result on the choropleth.
-* **Export** – filtered complaints CSV and query-result CSV.
+## What residents can do
 
-### Preset queries
-1. Top 10 wards by potholes
-2. Monthly trend of potholes
-3. Slowest-resolved categories (avg resolution days, ≥100 complaints)
-4. Hotspot wards (complaints per 100k residents ≥ mean + 0.5σ)
-5. Category mix per ward (stacked)
-6. Wards with lowest % resolved (≥200 complaints)
-7. Garbage complaints by weekday
-8. Water-supply complaints per 100k residents
+- **My Area.** Search a place, use your location, tap the map or pick one of the 26 wards. The panel shows open problems now, the ward's fix rate and median time to fix, its rank among wards and the city figure, the most reported categories, and a list of problems within 250 m, 500 m or 1 km. The map and list follow the same Open, Fixed or All filter.
+- **Report a Problem.** Drag the map until the pin sits on the problem, choose a category, describe it and add a landmark. No name or phone number is asked. The report gets a tracking ID such as `CR-261027-4QMM` and appears on the public map. Other residents can add "I face this too" once per device. The app tells people that it does not file with BMC and that they should also use the MyBMC app, the BMC website or the 1916 helpline.
+- **Ward Rankings.** All wards ranked by fix rate, median days to fix, open complaints or complaints per 100,000 residents, with a ward map.
+- **Data Explorer.** The original query builder: group by category, ward, month, weekday, hour or channel, split into stacks, filter, and see the equivalent PostgreSQL query. Results download as CSV.
 
 ## Data
+
 | | |
 |---|---|
-| Publisher | Brihanmumbai Municipal Corporation (BMC / MCGM) – public **MARG** ArcGIS REST service used by BMC's own public Pothole QuickFix dashboard (`https://marg.mcgm.gov.in/BMC_C_Pothole_Dashboard/`) |
-| Endpoint | `https://marg.mcgm.gov.in/server/rest/services/MARG_APP/MARG_Application_Prod/MapServer` – layers **0** `COMPLAINTS_REGISTRATION` (112,086 rows), **16** `POTHOLE_REGISTRATION` (12,060 rows), **2** `Ward_Boundary` (26 wards, with a population field) |
-| Fetched | 11 Oct 2026 (complaints dated 2026-03-18 → 2026-10-11) |
-| Licence | BMC states **no explicit open-data licence** on this service. It is public, unauthenticated government data; this repo uses it for non-commercial academic purposes with attribution to BMC/MCGM. Check with BMC before any commercial reuse. |
-| Coordinates | **Real** per-complaint latitude/longitude from the citizen's app/GPS – nothing is geocoded or invented. Ward boundaries are used only to (a) fill the 58 rows with an unknown ward by point-in-polygon and (b) draw the choropleth. |
+| Source | BMC (MCGM) public MARG ArcGIS service used by BMC's own complaint dashboards: layer 0 `COMPLAINTS_REGISTRATION` (CCRS, all departments and channels), layer 16 `POTHOLE_REGISTRATION` (Pothole QuickFix), layer 2 `Ward_Boundary` |
+| Snapshot | Fetched 11 Oct 2026. Complaints dated 18 Mar to 11 Oct 2026 (IST) |
+| Licence | BMC publishes no explicit open-data licence for this service. It is public and unauthenticated; this project uses it non-commercially with attribution |
+| Not used | Praja Foundation reports (PDF aggregates, not per-complaint), Kaggle "BMC complaints" (synthetic), OpenCity grievance data (Bengaluru) |
 
-Why not Kaggle / OpenCity / data.gov.in? The Kaggle "1.2M Complaints BMC" set is documented as *synthetic*; OpenCity's grievance data is Bengaluru (BBMP); BMC has no downloadable Mumbai complaint CSV on data.gov.in. The MARG service is the only real, geo-tagged, per-complaint Mumbai source we found.
+`scripts/build_dataset.py` turns the raw downloads into one table with one row per complaint. `scripts/eda.py` writes the analysis in [`data/eda/EDA.md`](data/eda/EDA.md). The main decisions:
 
-### Cleaning (`scripts/prepare_data.py`)
-1. Only non-personal fields are downloaded (no phone numbers, free-text descriptions, officer names, contractor names, photos).
-2. Layer 0 + layer 16 are unified into one schema (`id, date, category, subcategory, ward, zone, status, lat, lon, res_days, source, dataset`). Pothole QuickFix rows flagged "Invalid" become status *Discarded*.
-3. Rows with missing / projected / out-of-Mumbai coordinates are dropped (**550**).
-4. **14,546 rows were dropped because they all sit on one placeholder point** (19.07766, 72.87741 – mostly the "1916" helpline channel and invalid potholes with no real location; the next busiest point has only 132). Keeping them would have made ward L look falsely huge. This also means almost all *Discarded/invalid* complaints are absent from the map data.
-5. 58 rows with unknown ward get one by point-in-polygon on the BMC ward boundaries.
-6. `category` is derived from BMC's own complaint type/name (e.g. "Bad patches/potholes on roads" → *Potholes*, "street light" → *Street Lights*, drainage/sewerage/storm-water → *Drainage & Sewage*). Mapping is in `category()`.
-7. `res_days` = days from complaint date to the date of the *after/attended image* for **Closed** complaints (BMC does not publish a true closure timestamp for layer 0; for potholes layer 16 uses `RESOLVED_DATE`). Negative or >400-day values are blanked.
-8. Result: **96,999 rows, ~13 MB** CSV (`web/public/data/complaints.csv`) + simplified ward GeoJSON (31 KB). Summary in `data/prepare_stats.json`.
+1. **One register, not two.** 12,037 of the 12,060 Pothole QuickFix rows have the same ID as a CCRS row. They are joined on ID and the pothole fields (road type, invalid flag, resolved date) are copied onto the CCRS row. Nine pothole rows are added as new rows; 10 rows without an ID are dropped.
+2. **"Closed" split into Resolved and Rejected.** BMC marks 24,626 complaints CLOSED and INVALID at the same time. The old app counted them as resolved. Fix rate is now Resolved ÷ (Resolved + Rejected).
+3. **Indian time.** MARG stores UTC. Dates and hours are converted to IST, which moves late-evening complaints to the correct day.
+4. **Citizen-facing categories.** 14 categories from the complaint name the citizen picked, with BMC's department as a fallback, because the same complaint name is routed to different departments.
+5. **Locations.** 14,546 rows (mostly from the 1916 helpline) sit on a single placeholder point, and 550 are outside Mumbai. They stay in the database with `has_location = false` and are not drawn on the map. Missing wards are filled by point-in-polygon.
+6. **Time to fix.** `days_to_close` runs from the report to BMC's "after" photo, which is the best closure signal the service publishes. The app shows medians because the distribution is very skewed (median 8.4 days, mean 23.3 days).
 
-### Limitations
-* One ~7-month snapshot (Mar–Oct 2026), not a multi-year history; October 2026 is a partial month. Pothole counts rise with the monsoon.
-* Complaints ≠ problems: busier wards file more, and filing behaviour/channel differs. Per-100k rates use ward population from the BMC boundary layer.
-* "Severity" is not published; the delay filter is a proxy.
-* Status values are BMC's at fetch time; the live service keeps changing.
+Outputs:
 
-## Run locally
+| File | Use |
+|---|---|
+| `data/processed/problems.csv.gz` | Full unified table (112,094 rows, 20 columns). Seeds the `problems` table |
+| `data/processed/wards.csv` | Ward code, name, well-known areas, zone, population |
+| `web/public/data/problems.csv` | Compact copy of the 96,998 mapped rows, loaded by the browser |
+| `web/shared/wards.geo.ts` | Simplified ward outlines, imported by the app and the API |
+| `data/prepare_stats.json` | Row counts for every cleaning step |
+
+To refresh the data: `python3 scripts/download_raw.py`, then `python3 scripts/build_dataset.py`, then `python3 scripts/eda.py` (needs `pandas`, `shapely`, `matplotlib`, `tabulate`).
+
+## Database (Neon)
+
+Schema: [`web/db/schema.sql`](web/db/schema.sql). One `problems` table holds BMC rows (`source = 'bmc'`) and resident reports (`source = 'citizen'`). `wards` holds ward names and population. `problem_supporters` records one "I face this too" vote per device.
+
+Set up a Neon database:
+
 ```bash
 cd web
-npm install
-npm run dev          # http://localhost:5173
-npm run build        # type-check + production build into web/dist
-npm run preview
-```
-Re-create the data (optional; needs Python 3 with `pandas` and `shapely`):
-```bash
-python3 scripts/download_raw.py     # ~2 min, writes data/raw/*
-python3 scripts/prepare_data.py     # writes web/public/data/*
+cp .env.example .env.local      # paste your Neon connection string into DATABASE_URL
+pnpm install
+pnpm db:setup                    # creates tables, loads 26 wards and 112,094 BMC rows; safe to re-run
 ```
 
-## Deploy on Vercel (later)
-* Import the repo, set **Root Directory** = `web`
-* Framework preset **Vite**, Build command `npm run build`, Output directory `dist`
-* No environment variables, no backend.
+Re-running `db:setup` updates BMC rows and never touches resident reports.
+
+The browser still reads BMC complaints from the static `problems.csv`, which a CDN serves quickly. The database stores the full dataset for SQL and holds resident reports.
+
+## API (Vercel functions in `web/api/`)
+
+| Route | Does |
+|---|---|
+| `GET /api/reports` | Resident reports, newest first (optional `?ward=KW`) |
+| `POST /api/reports` | New report. Validates category, a description of at least 10 characters, and a pin inside a BMC ward. Assigns the ward on the server. Limit of 10 reports per device per day |
+| `POST /api/reports/:id/support` | "I face this too", one vote per device |
+| `GET /api/health` | Which database is connected |
+
+Reporters are identified only by a salted hash of the browser's random device ID and IP address. The raw IP is never stored. All user text is rendered as text, never as HTML.
+
+Without `DATABASE_URL`, the API returns 503 and the app saves reports in the visitor's browser only, with a notice saying so.
+
+## Run locally
+
+```bash
+cd web
+pnpm install
+pnpm dev              # http://localhost:5173. API included; uses Neon if DATABASE_URL is set, else a local PGlite database in web/.data/
+pnpm build            # type-checks app and API, then builds web/dist
+```
+
+## Deploy on Vercel
+
+- Import the repo and set **Root Directory** to `web`. Framework preset: Vite.
+- Add `DATABASE_URL` and `REPORTER_SALT` under Environment Variables.
+- Run `pnpm db:setup` once from your machine against the same database.
 
 ## Layout
+
 ```
-data/raw/            raw API downloads (complaints gzipped) + prepare_stats.json
-scripts/             download_raw.py, prepare_data.py
-web/                 Vite + React + TS app (public/data = shipped dataset)
-artifacts/screenshots/
+data/raw/            raw MARG downloads
+data/processed/      unified dataset and ward table
+data/eda/            EDA report and charts
+scripts/             download_raw.py, build_dataset.py, eda.py
+web/src/             React app (views/, components/, tokens.css = Firecrawl design system)
+web/api/             Vercel functions
+web/db/              schema.sql, setup.mjs (schema + seed)
+web/shared/          code shared by app and API: categories, ward outlines, geometry
+artifacts/screenshots-v2/   screenshots of this version
 ```
 
-## Mobile / responsive UI
+## Limitations
 
-At viewport widths ≤ 820 px (phones and portrait tablets) the app switches to a map-first layout: a full-viewport map (`100dvh`, safe-area aware) with a compact top bar (layer toggle, colour-by, swipeable stat cards) and a **Filters & Queries** button that opens a bottom sheet (Filters / Queries / About tabs; ✕ or Esc closes). Controls use ≥44 px touch targets and 16 px inputs (no iOS zoom). Wider screens keep the original desktop layout. Screenshots: `artifacts/screenshots/mobile-*.png`.
+- One seven-month snapshot. October 2026 is partial. Potholes and drains rise with the monsoon.
+- Complaints are not the same as problems. Busy wards file more, and filing habits differ by channel.
+- Rejected means BMC closed the complaint as invalid. The data does not say whether the citizen agreed.
+- Reports filed in this app are not sent to BMC.
+- The ward outlines are simplified. A point within 150 m of a ward edge goes to the nearest ward. On a sample of 4,850 complaints this matched BMC's own ward label 98% of the time.
+- Ward locality names are a short guide for finding your ward, not official boundaries.

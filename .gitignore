@@ -4,5 +4,7 @@ dist
 *.log
 .env
 .env.*
+!.env.example
 .vercel
 __pycache__
+.data
