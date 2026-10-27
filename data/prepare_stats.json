@@ -1,41 +1,61 @@
 {
-  "rows_downloaded": {
+  "raw_rows": {
     "ccrs": 112086,
-    "pothole_quickfix": 12060,
-    "total": 124146
+    "pothole_quickfix": 12060
   },
-  "dropped_bad_or_missing_coordinates": 550,
-  "dropped_placeholder_coordinate": 14546,
-  "placeholder_coordinate": [
-    19.07766,
-    72.87741
-  ],
-  "ward_derived_by_point_in_polygon": 58,
-  "dropped_no_ward": 0,
-  "rows_shipped": 96999,
-  "date_range": [
-    "2026-03-18",
-    "2026-10-11"
-  ],
-  "by_category": {
-    "Garbage & Sanitation": 16056,
-    "Buildings, Licences & Property": 15550,
-    "Potholes": 12692,
-    "Encroachment & Hawkers": 11519,
-    "Drainage & Sewage": 10197,
-    "Trees & Gardens": 7607,
-    "Roads & Footpaths": 7410,
-    "Water Supply": 7194,
-    "Pests, Health & Environment": 6939,
-    "Street Lights": 1592,
-    "Other": 243
+  "dropped_missing_id_or_date": 1,
+  "duplicate_ids_in_ccrs": 0,
+  "pothole_rows_without_id_dropped": 10,
+  "pothole_rows_matching_ccrs": 12037,
+  "pothole_rows_only_in_quickfix": 9,
+  "unified_rows_before_cleaning": 112094,
+  "dropped_unknown_status": 0,
+  "blanked_impossible_days_to_close": 2,
+  "no_real_location": {
+    "outside_mumbai_or_missing": 550,
+    "placeholder_point": 14546
   },
+  "ward_filled_by_point_in_polygon": 58,
+  "rows_without_ward": 14503,
+  "unified_rows": 112094,
+  "rows_with_real_location": 96998,
+  "app_rows": 96998,
+  "date_range_ist": [
+    "2026-03-18 11:28:10+05:30",
+    "2026-10-11 21:07:41+05:30"
+  ],
   "by_status": {
-    "Closed": 76576,
-    "In Progress": 14282,
-    "In Review": 6126,
-    "Discarded": 14,
-    "New": 1
+    "Resolved": 52261,
+    "Rejected": 24626,
+    "In Progress": 14326,
+    "Discarded": 13875,
+    "In Review": 6374,
+    "Open": 632
   },
-  "res_days_available": 76495
+  "by_category": {
+    "Encroachment & Hawkers": 20076,
+    "Garbage & Cleanliness": 19316,
+    "Drains & Sewage": 15934,
+    "Potholes": 13073,
+    "Trees & Gardens": 7099,
+    "Water Supply": 6943,
+    "Roads & Footpaths": 6896,
+    "Mosquitoes, Pests & Animals": 6814,
+    "Illegal Construction": 5691,
+    "Public Buildings & Services": 5434,
+    "Street Lights": 2099,
+    "Licences, Tax & Billing": 1397,
+    "Pollution & Noise": 1125,
+    "Other": 197
+  },
+  "by_channel": {
+    "MyBMC app": 52637,
+    "1916 helpline": 23009,
+    "X (Twitter)": 19218,
+    "WhatsApp": 11733,
+    "BMC web portal": 5398,
+    "Instagram": 72,
+    "Letter": 14,
+    "Email": 13
+  }
 }

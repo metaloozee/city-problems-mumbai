@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "db:setup": "node scripts/db-setup.mjs"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
     "leaflet": "^1.9.4",
-    "leaflet.heat": "^0.2.0",
     "papaparse": "^5.7.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
@@ -19,7 +21,9 @@
     "supercluster": "^9.1.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.12",
     "@types/leaflet": "^1.9.22",
+    "@types/node": "^26.6.5",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
