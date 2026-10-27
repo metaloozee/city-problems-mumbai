@@ -1,5 +1,15 @@
 import { useCallback, useMemo, useState, type FormEvent } from "react";
+import { CheckCircle2Icon, InfoIcon } from "lucide-react";
 import MapView from "../components/MapView";
+import { MapLayout } from "../components/MapLayout";
+import { cn } from "@/lib/utils";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
 import { PlaceSearch } from "../components/common";
 import { CATEGORIES, LIMITS } from "../../shared/categories";
 import { wardAt } from "../../shared/geo";
@@ -59,86 +69,89 @@ export default function ReportView({ rows, reports, place, backend, dark, onCrea
   };
 
   if (done) {
-    return (
-      <div className="split">
-        <aside className="panel">
-          <div className="fc-card">
-            <div className="label-small muted">Report Filed</div>
-            <h1 className="title-h5">Thanks. Your report is on the map.</h1>
-            <p className="body-medium">Tracking ID <span className="mono-small">{done.id}</span></p>
-            <p className="body-medium muted">
-              {done.local
-                ? "The reports database is not connected yet, so this report is saved on this device only. Other residents cannot see it."
-                : `Residents of ${wardLabel(done.ward)} can now see it and add “I face this too”.`}
-            </p>
-            <div className="fc-card fc-card--compact notice">
-              <div className="label-medium">This App Does Not File With BMC</div>
-              <p className="body-small">To get BMC to act, also register the complaint on the MyBMC app, the BMC website or the 1916 helpline. Mention the landmark you gave here.</p>
-            </div>
-            <div className="actions">
-              <button type="button" className="fc-btn fc-btn--secondary label-medium" onClick={() => onViewOnMap(done)}>View On Map</button>
-              <button type="button" className="fc-btn fc-btn--tertiary label-medium" onClick={() => { setDone(null); setDescription(""); setLandmark(""); setCategory(""); setTried(false); }}>Report Another Problem</button>
-            </div>
-          </div>
-        </aside>
-        <MapView rows={[]} reports={reports} point={{ lat: done.lat, lon: done.lon }} view={{ center: [done.lat, done.lon], zoom: 17, key: done.id }} dark={dark} />
-      </div>
+    const panel = (
+      <>
+        <div className="flex flex-col gap-1.5">
+          <div className="label-small flex items-center gap-1.5 text-status-resolved"><CheckCircle2Icon className="size-4" aria-hidden="true" />Report filed</div>
+          <h1 className="title-h5 text-balance">Thanks. Your report is on the map.</h1>
+          <p className="body-medium">Tracking ID <span className="mono-small">{done.id}</span></p>
+          <p className="body-medium text-pretty text-muted-foreground">
+            {done.local
+              ? "The reports database is not connected yet, so this report is saved on this device only. Other residents cannot see it."
+              : `Residents of ${wardLabel(done.ward)} can now see it and add “I face this too”.`}
+          </p>
+        </div>
+        <Alert>
+          <InfoIcon />
+          <AlertTitle>This app does not file with BMC</AlertTitle>
+          <AlertDescription className="text-pretty">To get BMC to act, also register the complaint on the MyBMC app, the BMC website or the 1916 helpline. Mention the landmark you gave here.</AlertDescription>
+        </Alert>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => onViewOnMap(done)}>View On Map</Button>
+          <Button variant="ghost" onClick={() => { setDone(null); setDescription(""); setLandmark(""); setCategory(""); setTried(false); }}>Report Another Problem</Button>
+        </div>
+      </>
     );
+    return <MapLayout label="Report filed" panel={panel} map={
+      <MapView rows={[]} reports={reports} point={{ lat: done.lat, lon: done.lon }} view={{ center: [done.lat, done.lon], zoom: 17, key: done.id }} dark={dark} />
+    } />;
   }
 
-  return (
-    <div className="split split--report">
-      <form className="panel" onSubmit={submit} noValidate aria-label="Report a problem">
+  const hint = CATEGORIES.find((c) => c.name === category)?.hint;
+  const panel = (
+    <form onSubmit={submit} noValidate aria-label="Report a problem" className="flex flex-col gap-6">
+      <div className="flex flex-col gap-1.5">
         <h1 className="title-h5">Report a problem</h1>
-        <p className="body-medium muted">Your report appears on the public map for your neighbours. No name or phone number is needed.</p>
+        <p className="body-medium text-pretty text-muted-foreground">It appears on the public map for your neighbours. No name or phone number needed.</p>
+      </div>
 
-        <fieldset className="field">
-          <legend className="label-medium">1. Where Is It?</legend>
-          <p className="body-small muted">Drag the map so the pin sits exactly on the problem, or search.</p>
-          <PlaceSearch compact onFound={(p) => { setPin({ lat: p.lat, lon: p.lon }); setView({ center: [p.lat, p.lon], zoom: 18, key: `${p.lat},${p.lon}` }); }} />
-          <div className={"pin-readout body-small" + (tried && problems.ward ? " error" : "")} role="status">
-            {ward ? <><b>{wardLabel(ward)}</b> · {WARD_BY_CODE.get(ward)?.areas} <span className="mono-x-small muted">{pin.lat.toFixed(5)}, {pin.lon.toFixed(5)}</span></> : problems.ward}
-          </div>
-        </fieldset>
+      <FieldSet>
+        <FieldLegend>Where is it?</FieldLegend>
+        <FieldDescription>Move the map so the pin sits on the problem, or search.</FieldDescription>
+        <PlaceSearch onFound={(p) => { setPin({ lat: p.lat, lon: p.lon }); setView({ center: [p.lat, p.lon], zoom: 18, key: `${p.lat},${p.lon}` }); }} />
+        <div role="status" className={cn("body-small flex flex-wrap items-baseline gap-x-2 rounded-md bg-muted px-3 py-2", tried && problems.ward && "text-destructive")}>
+          {ward ? <><span className="label-small">{wardLabel(ward)}</span><span className="text-muted-foreground">{WARD_BY_CODE.get(ward)?.areas}</span>
+            <span className="mono-x-small text-muted-foreground tabular-nums">{pin.lat.toFixed(5)}, {pin.lon.toFixed(5)}</span></> : problems.ward}
+        </div>
+      </FieldSet>
 
-        <fieldset className="field">
-          <legend className="label-medium">2. What Is the Problem?</legend>
-          <div className="cat-grid" role="radiogroup" aria-label="Problem type">
-            {CATEGORIES.filter((c) => c.reportable).map((c) => (
-              <label key={c.name} className={"cat" + (category === c.name ? " on" : "")}>
-                <input type="radio" name="category" value={c.name} checked={category === c.name} onChange={() => setCategory(c.name)} />
-                <span className="label-small">{c.name}</span>
-                <span className="body-small muted">{c.hint}</span>
-              </label>
-            ))}
-          </div>
-          {tried && problems.category && <p className="body-small error">{problems.category}</p>}
+      <FieldGroup>
+        <Field data-invalid={tried && !!problems.category}>
+          <FieldLabel htmlFor="category">What is the problem?</FieldLabel>
+          <Select value={category} onValueChange={setCategory}>
+            <SelectTrigger id="category" className="w-full" aria-invalid={tried && !!problems.category}><SelectValue placeholder="Choose a problem type" /></SelectTrigger>
+            <SelectContent>
+              <SelectGroup>{CATEGORIES.filter((c) => c.reportable).map((c) => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}</SelectGroup>
+            </SelectContent>
+          </Select>
+          {tried && problems.category ? <FieldError>{problems.category}</FieldError> : hint && <FieldDescription>{hint}</FieldDescription>}
           {category && nearby > 0 && (
-            <p className="body-small muted">{fmt.int(nearby)} open {category.toLowerCase()} {nearby === 1 ? "complaint is" : "complaints are"} already within about 250 m in BMC's data.</p>
+            <FieldDescription>{fmt.int(nearby)} open {category.toLowerCase()} {nearby === 1 ? "complaint is" : "complaints are"} already within about 250 m in BMC's data.</FieldDescription>
           )}
-        </fieldset>
+        </Field>
 
-        <fieldset className="field">
-          <legend className="label-medium">3. Describe It</legend>
-          <label className="label-small" htmlFor="desc">What You See</label>
-          <textarea id="desc" className="fc-input body-input" maxLength={LIMITS.description} value={description}
-            aria-invalid={tried && !!problems.description} aria-describedby="desc-help"
+        <Field data-invalid={tried && !!problems.description}>
+          <FieldLabel htmlFor="desc">Describe it</FieldLabel>
+          <Textarea id="desc" maxLength={LIMITS.description} value={description} aria-invalid={tried && !!problems.description}
             placeholder="Example: Deep pothole in the left lane, about 1 m wide. Bikes swerve into traffic." onChange={(e) => setDescription(e.target.value)} />
-          <div id="desc-help" className={"body-small " + (tried && problems.description ? "error" : "muted")}>
-            {tried && problems.description ? problems.description : `${description.length} / ${LIMITS.description}`}
-          </div>
-          <label className="label-small" htmlFor="landmark">Nearest Landmark (Optional)</label>
-          <input id="landmark" className="fc-input body-input" maxLength={LIMITS.landmark} value={landmark}
-            placeholder="Example: Opposite Andheri station east exit" onChange={(e) => setLandmark(e.target.value)} />
-        </fieldset>
+          {tried && problems.description
+            ? <FieldError>{problems.description}</FieldError>
+            : <FieldDescription className="tabular-nums">{description.length} / {LIMITS.description}</FieldDescription>}
+        </Field>
 
-        {err && <p className="body-small error" role="alert">{err}</p>}
-        {backend === "device" && (
-          <p className="body-small muted">The reports database is not connected yet. Your report will be saved on this device only.</p>
-        )}
-        <button type="submit" className="fc-btn fc-btn--primary fc-btn--lg label-large wide" disabled={busy}>{busy ? "Submitting…" : "Submit Report"}</button>
-      </form>
-      <MapView rows={[]} reports={reports} pickMode onPick={onPick} view={view} dark={dark} />
-    </div>
+        <Field>
+          <FieldLabel htmlFor="landmark">Nearest landmark <span className="font-normal text-muted-foreground">(optional)</span></FieldLabel>
+          <Input id="landmark" maxLength={LIMITS.landmark} value={landmark} placeholder="Example: Opposite Andheri station east exit" onChange={(e) => setLandmark(e.target.value)} />
+        </Field>
+      </FieldGroup>
+
+      {err && <Alert variant="destructive"><AlertDescription>{err}</AlertDescription></Alert>}
+      <div className="flex flex-col gap-2">
+        <Button type="submit" size="lg" className="w-full" disabled={busy}>{busy && <Spinner data-icon="inline-start" />}{busy ? "Submitting…" : "Submit Report"}</Button>
+        {backend === "device" && <p className="body-small text-center text-pretty text-muted-foreground">The reports database is not connected yet, so your report is saved on this device only.</p>}
+      </div>
+    </form>
   );
+
+  return <MapLayout label="Report a problem" panel={panel} map={<MapView rows={[]} reports={reports} pickMode onPick={onPick} view={view} dark={dark} />} />;
 }

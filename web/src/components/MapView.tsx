@@ -1,22 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
-import L from "leaflet";
-import Supercluster from "supercluster";
+import type { FeatureCollection, Point, Polygon } from "geojson";
+import type { MapLayerMouseEvent, GeoJSONSource } from "maplibre-gl";
+import { Map as MapRoot, MapControls, MapGeoJSON, MapMarker, MapPopup, MarkerContent, MarkerPopup, useMap } from "@/components/ui/map";
+import { cn } from "@/lib/utils";
 import wardsGeo from "../../shared/wards.geo";
 import type { CitizenReport, Problem } from "../types";
 import { fmt } from "../stats";
 import { wardLabel } from "../data";
-
-export const STATUS_STYLE = {
-  open: { color: "var(--status-open)", hex: "#d97706", label: "Open" },
-  resolved: { color: "var(--status-resolved)", hex: "#16a34a", label: "Resolved" },
-  closed: { color: "var(--status-closed)", hex: "#8f8f8f", label: "Rejected" },
-  citizen: { color: "var(--status-citizen)", hex: "#2a6dfb", label: "Resident report" },
-};
-export const statusKind = (status: string) =>
-  status === "Resolved" ? "resolved" : status === "Rejected" || status === "Discarded" ? "closed" : "open";
+import { STATUS_STYLE, StatusDot, statusKind } from "./common";
+import { PANEL_LEFT, SHEET_PEEK } from "./MapLayout";
+import { Button } from "@/components/ui/button";
+import { useDesktop } from "@/hooks/use-media";
 
 export const CHORO_RAMP = ["#fde3d6", "#fbb894", "#f98d55", "#e9601f", "#b33c0a"];
+
+/** MapLibre paint needs literal colours, so the few the map draws with are mirrored from tokens.css here. */
+const INK = { light: { fg: "#262626", surface: "#ffffff", muted: "#8f8f8f" }, dark: { fg: "#f5f5f5", surface: "#171717", muted: "#737373" } };
 
 export interface MapViewProps {
   rows: Problem[];
@@ -30,214 +29,284 @@ export interface MapViewProps {
   onMapClick?: (lat: number, lon: number) => void;
   onWardClick?: (ward: string) => void;
   onSupport?: (id: string) => Promise<number | string>;
+  /** `center` is [lat, lon]. */
   view?: { center: [number, number]; zoom: number; key: string } | null;
   dark: boolean;
 }
 
-/** Leaflet popups are built from DOM nodes with textContent, never HTML strings, so user text cannot inject markup. */
-function el(tag: string, cls: string, text?: string): HTMLElement {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text !== undefined) e.textContent = text;
-  return e;
-}
-function problemPopup(r: Problem): HTMLElement {
-  const box = el("div", "pop");
-  box.append(el("div", "pop-kicker label-x-small", r.category));
-  box.append(el("div", "pop-title label-medium", r.subcategory));
-  const kind = statusKind(r.status);
-  const st = el("div", "pop-status label-small");
-  const dot = el("span", `dot dot--${kind}`);
-  st.append(dot, document.createTextNode(r.status + (r.status === "Resolved" && r.daysToClose !== null ? ` in ${fmt.days(r.daysToClose)}` : "")));
-  box.append(st);
-  box.append(el("div", "pop-meta body-small", `${wardLabel(r.ward)} · reported ${fmt.date(r.date)} via ${r.channel}`));
-  box.append(el("div", "pop-id mono-x-small", r.id));
-  return box;
-}
-function reportPopup(r: CitizenReport, onSupport?: MapViewProps["onSupport"]): HTMLElement {
-  const box = el("div", "pop");
-  box.append(el("div", "pop-kicker label-x-small", `${r.category} · reported by a resident`));
-  box.append(el("div", "pop-desc body-medium", r.description));
-  if (r.landmark) box.append(el("div", "pop-meta body-small", `Near ${r.landmark}`));
-  box.append(el("div", "pop-meta body-small", `${wardLabel(r.ward)} · ${fmt.date(r.reported_at)}`));
-  const row = el("div", "pop-row");
-  const count = el("span", "label-small", `${r.supporters} ${r.supporters === 1 ? "person faces" : "people face"} this`);
-  row.append(count);
-  if (onSupport && !r.local) {
-    const btn = el("button", "fc-btn fc-btn--secondary fc-btn--sm label-small", "I Face This Too") as HTMLButtonElement;
-    btn.type = "button";
-    btn.onclick = async () => {
-      btn.disabled = true;
-      const res = await onSupport(r.id);
-      if (typeof res === "number") count.textContent = `${res} ${res === 1 ? "person faces" : "people face"} this`;
-      else { btn.disabled = false; count.textContent = res; }
-    };
-    row.append(btn);
-  }
-  box.append(row);
-  box.append(el("div", "pop-id mono-x-small", r.id));
-  return box;
+const BOUNDS: [[number, number], [number, number]] = [[72.55, 18.7], [73.25, 19.5]];
+
+/** Classes for mapcn's popup container, which is the card itself. */
+const POPUP = "w-72 max-w-[calc(100vw-2rem)] rounded-xl p-4 shadow-lg";
+
+/** Popup body. The container comes from MapPopup / MarkerPopup, so this adds no surface of its own. */
+function PopupCard({ kicker, children, id }: { kicker: string; children: React.ReactNode; id: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="label-x-small truncate pr-6 text-muted-foreground">{kicker}</div>
+      {children}
+      <div className="mono-x-small border-t pt-2 text-muted-foreground">{id}</div>
+    </div>
+  );
 }
 
-function ClusterLayer({ rows }: { rows: Problem[] }) {
-  const map = useMap();
-  const index = useMemo(() => {
-    const sc = new Supercluster<{ i: number }>({ radius: 50, maxZoom: 17 });
-    sc.load(rows.map((r, i) => ({ type: "Feature" as const, properties: { i }, geometry: { type: "Point" as const, coordinates: [r.lon, r.lat] } })));
-    return sc;
-  }, [rows]);
+function ProblemPopup({ r }: { r: Problem }) {
+  const kind = statusKind(r.status);
+  return (
+    <PopupCard kicker={r.category} id={r.id}>
+      <div className="label-medium text-pretty">{r.subcategory}</div>
+      <div className="label-small flex items-center gap-1.5">
+        <StatusDot kind={kind} />
+        {r.status}{r.status === "Resolved" && r.daysToClose !== null ? ` in ${fmt.days(r.daysToClose)}` : ""}
+      </div>
+      <div className="body-small text-muted-foreground">{wardLabel(r.ward)} · reported {fmt.date(r.date)} via {r.channel}</div>
+    </PopupCard>
+  );
+}
+
+function ReportPopup({ r, onSupport }: { r: CitizenReport; onSupport?: MapViewProps["onSupport"] }) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const support = async () => {
+    setBusy(true);
+    const res = await onSupport!(r.id);
+    setBusy(false);
+    setNote(typeof res === "string" ? res : null);
+  };
+  return (
+    <PopupCard kicker={`${r.category} · reported by a resident`} id={r.id}>
+      <div className="body-medium text-pretty">{r.description}</div>
+      {r.landmark && <div className="body-small text-muted-foreground">Near {r.landmark}</div>}
+      <div className="body-small text-muted-foreground">{wardLabel(r.ward)} · {fmt.date(r.reported_at)}</div>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <span className="label-small tabular-nums">{note ?? `${r.supporters} ${r.supporters === 1 ? "person faces" : "people face"} this`}</span>
+        {onSupport && !r.local && (
+          <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={support}>I Face This Too</Button>
+        )}
+      </div>
+    </PopupCard>
+  );
+}
+
+/** Complaints as GPU-clustered circles coloured by status. Clicking a point opens its popup; clicking a cluster zooms in. */
+function ProblemsLayer({ rows, dark }: { rows: Problem[]; dark: boolean }) {
+  const { map, isLoaded } = useMap();
+  const [selected, setSelected] = useState<Problem | null>(null);
+  const data = useMemo<FeatureCollection<Point, { i: number; kind: string }>>(() => ({
+    type: "FeatureCollection",
+    features: rows.map((r, i) => ({ type: "Feature", properties: { i, kind: statusKind(r.status) }, geometry: { type: "Point", coordinates: [r.lon, r.lat] } })),
+  }), [rows]);
+  const ink = dark ? INK.dark : INK.light;
+
   useEffect(() => {
-    const group = L.layerGroup().addTo(map);
-    const canvas = L.canvas({ padding: 0.5 });
-    const draw = () => {
-      group.clearLayers();
-      const b = map.getBounds();
-      for (const it of index.getClusters([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], Math.round(map.getZoom()))) {
-        const [lon, lat] = it.geometry.coordinates;
-        const p: any = it.properties;
-        if (p.cluster) {
-          const n: number = p.point_count;
-          const size = n > 2000 ? 48 : n > 300 ? 40 : n > 50 ? 34 : 28;
-          const icon = L.divIcon({ html: `<div class="cluster mono-x-small" style="width:${size}px;height:${size}px">${p.point_count_abbreviated}</div>`, className: "", iconSize: [size, size] });
-          const m = L.marker([lat, lon], { icon, keyboard: false, title: `${n} problems here. Zoom in.` });
-          m.on("click", () => map.flyTo([lat, lon], Math.min(index.getClusterExpansionZoom(p.cluster_id), 18)));
-          group.addLayer(m);
-        } else {
-          const r = rows[p.i];
-          const kind = statusKind(r.status);
-          const m = L.circleMarker([lat, lon], {
-            renderer: canvas, radius: kind === "open" ? 6 : 5, color: "#ffffff", weight: 1.5,
-            fillColor: STATUS_STYLE[kind].hex, fillOpacity: kind === "closed" ? 0.7 : 0.95,
-          });
-          m.bindPopup(() => problemPopup(r));
-          group.addLayer(m);
-        }
-      }
+    if (!map || !isLoaded) return;
+    const src = "problems", clusters = "problems-clusters", counts = "problems-counts", points = "problems-points";
+    map.addSource(src, { type: "geojson", data, cluster: true, clusterRadius: 50, clusterMaxZoom: 16 });
+    map.addLayer({
+      id: clusters, type: "circle", source: src, filter: ["has", "point_count"],
+      paint: {
+        "circle-color": ink.surface, "circle-stroke-color": ink.fg, "circle-stroke-opacity": 0.16, "circle-stroke-width": 1,
+        "circle-radius": ["step", ["get", "point_count"], 14, 50, 17, 300, 20, 2000, 24],
+      },
+    });
+    map.addLayer({
+      id: counts, type: "symbol", source: src, filter: ["has", "point_count"],
+      layout: { "text-field": "{point_count_abbreviated}", "text-font": ["Montserrat SemiBold", "Open Sans Bold"], "text-size": 11, "text-allow-overlap": true },
+      paint: { "text-color": ink.fg },
+    });
+    map.addLayer({
+      id: points, type: "circle", source: src, filter: ["!", ["has", "point_count"]],
+      paint: {
+        "circle-color": ["match", ["get", "kind"], "resolved", STATUS_STYLE.resolved.hex, "closed", STATUS_STYLE.closed.hex, STATUS_STYLE.open.hex],
+        "circle-radius": ["match", ["get", "kind"], "open", 6, 5],
+        "circle-opacity": ["match", ["get", "kind"], "closed", 0.7, 0.95],
+        "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.5,
+      },
+    });
+    const onCluster = async (e: MapLayerMouseEvent) => {
+      const f = e.features?.[0];
+      if (!f || f.geometry.type !== "Point") return;
+      const zoom = await (map.getSource(src) as GeoJSONSource).getClusterExpansionZoom(f.properties.cluster_id);
+      map.easeTo({ center: f.geometry.coordinates as [number, number], zoom: Math.min(zoom, 18) });
     };
-    draw();
-    map.on("moveend", draw);
-    return () => { map.off("moveend", draw); group.remove(); };
-  }, [map, index, rows]);
-  return null;
+    const onPoint = (e: MapLayerMouseEvent) => {
+      const f = e.features?.[0];
+      if (f) setSelected(rows[f.properties.i as number]);
+    };
+    const pointer = () => { map.getCanvas().style.cursor = "pointer"; };
+    const reset = () => { map.getCanvas().style.cursor = ""; };
+    map.on("click", clusters, onCluster);
+    map.on("click", points, onPoint);
+    for (const l of [clusters, points]) { map.on("mouseenter", l, pointer); map.on("mouseleave", l, reset); }
+    return () => {
+      map.off("click", clusters, onCluster);
+      map.off("click", points, onPoint);
+      for (const l of [clusters, points]) { map.off("mouseenter", l, pointer); map.off("mouseleave", l, reset); }
+      try {
+        for (const l of [points, counts, clusters]) if (map.getLayer(l)) map.removeLayer(l);
+        if (map.getSource(src)) map.removeSource(src);
+      } catch { /* style may be mid-reload */ }
+    };
+  }, [map, isLoaded, data, rows, ink]);
+
+  useEffect(() => setSelected(null), [rows]);
+
+  return selected ? (
+    <MapPopup longitude={selected.lon} latitude={selected.lat} onClose={() => setSelected(null)} closeButton focusAfterOpen={false} offset={12} className={POPUP}>
+      <ProblemPopup r={selected} />
+    </MapPopup>
+  ) : null;
 }
 
 function ReportsLayer({ reports, onSupport }: { reports: CitizenReport[]; onSupport?: MapViewProps["onSupport"] }) {
-  const map = useMap();
-  // Rebuild markers only when the set of reports changes, so a vote count update does not close an open popup.
-  const latest = useRef(reports);
-  latest.current = reports;
-  const ids = reports.map((r) => r.id).join(",");
-  useEffect(() => {
-    const group = L.layerGroup(
-      latest.current.map((r) => {
-        const icon = L.divIcon({ html: `<div class="report-pin"></div>`, className: "", iconSize: [18, 18], iconAnchor: [9, 9] });
-        return L.marker([r.lat, r.lon], { icon, title: `${r.category}, reported by a resident`, zIndexOffset: 500 })
-          .bindPopup(() => reportPopup(latest.current.find((x) => x.id === r.id) ?? r, onSupport));
-      }),
-    ).addTo(map);
-    return () => { group.remove(); };
-  }, [map, ids, onSupport]);
-  return null;
+  return reports.map((r) => (
+    <MapMarker key={r.id} longitude={r.lon} latitude={r.lat}>
+      <MarkerContent>
+        <div className="size-[18px] rounded-[5px] border-[2.5px] border-white shadow-md" style={{ background: STATUS_STYLE.citizen.color }}
+          title={`${r.category}, reported by a resident`} />
+      </MarkerContent>
+      <MarkerPopup closeButton focusAfterOpen={false} offset={14} className={POPUP}>
+        <ReportPopup r={r} onSupport={onSupport} />
+      </MarkerPopup>
+    </MapMarker>
+  ));
 }
 
-function WardLayer({ highlight, choropleth, onWardClick }: Pick<MapViewProps, "choropleth" | "onWardClick"> & { highlight?: string | null }) {
-  const map = useMap();
-  const range = useMemo(() => {
-    if (!choropleth) return null;
-    const v = [...choropleth.values.values()].filter((x): x is number => x !== null);
-    return v.length ? { min: Math.min(...v), max: Math.max(...v) } : null;
-  }, [choropleth]);
-  useEffect(() => {
-    const colorOf = (v: number | null | undefined) => {
-      if (v === null || v === undefined || !range) return "transparent";
-      const t = range.max === range.min ? 0.5 : (v - range.min) / (range.max - range.min);
-      const idx = Math.min(CHORO_RAMP.length - 1, Math.floor((choropleth!.higherIsWorse ? t : 1 - t) * CHORO_RAMP.length));
-      return CHORO_RAMP[idx];
+type WardProps = { ward: string; areas: string; fill: string; value: number | null };
+
+function WardLayer({ highlight, choropleth, onWardClick, dark, onHover }: Pick<MapViewProps, "choropleth" | "onWardClick" | "dark"> & {
+  highlight?: string | null;
+  onHover: (w: WardProps | null) => void;
+}) {
+  const ink = dark ? INK.dark : INK.light;
+  const data = useMemo<FeatureCollection<Polygon, WardProps>>(() => {
+    const v = choropleth ? [...choropleth.values.values()].filter((x): x is number => x !== null) : [];
+    const min = Math.min(...v), max = Math.max(...v);
+    const colorOf = (x: number | null | undefined) => {
+      if (x === null || x === undefined || !v.length) return "rgba(0,0,0,0)";
+      const t = max === min ? 0.5 : (x - min) / (max - min);
+      return CHORO_RAMP[Math.min(CHORO_RAMP.length - 1, Math.floor((choropleth!.higherIsWorse ? t : 1 - t) * CHORO_RAMP.length))];
     };
-    const layer = L.geoJSON(wardsGeo as any, {
-      style: (f) => {
-        const w = f!.properties.ward;
-        const sel = w === highlight;
-        return choropleth
-          ? { fillColor: colorOf(choropleth.values.get(w)), fillOpacity: 0.8, color: sel ? "#262626" : "#ffffff", weight: sel ? 3 : 1 }
-          : { fill: !!onWardClick, fillOpacity: 0, color: sel ? "#262626" : "#8f8f8f", weight: sel ? 3 : 1, dashArray: sel ? undefined : "3 4", opacity: sel ? 0.9 : 0.6 };
-      },
-      onEachFeature: (f, l) => {
-        const w = f.properties.ward;
-        const v = choropleth?.values.get(w);
-        const tip = el("div", "body-small");
-        tip.append(el("b", "", wardLabel(w)), document.createTextNode(` · ${f.properties.areas}`));
-        if (choropleth) tip.append(el("div", "", `${choropleth.label}: ${v === null || v === undefined ? "No data" : choropleth.format(v)}`));
-        if (onWardClick) {
-          l.bindTooltip(tip, { sticky: true });
-          l.on("click", () => onWardClick(w));
-        }
-      },
-      interactive: !!onWardClick,
-    }).addTo(map);
-    layer.bringToBack();
-    return () => { layer.remove(); };
-  }, [map, highlight, choropleth, range, onWardClick]);
-  return null;
+    return {
+      type: "FeatureCollection",
+      features: wardsGeo.features.map((f) => {
+        const value = choropleth?.values.get(f.properties.ward) ?? null;
+        return { type: "Feature", geometry: f.geometry as Polygon, properties: { ward: f.properties.ward, areas: f.properties.areas, fill: colorOf(value), value } };
+      }),
+    };
+  }, [choropleth]);
+  const sel = ["==", ["get", "ward"], highlight ?? ""];
+  const fillPaint = useMemo(() => (choropleth || onWardClick
+    ? { "fill-color": ["get", "fill"], "fill-opacity": choropleth ? 0.8 : 0 }
+    : false) as never, [choropleth, onWardClick]);
+  const fillHoverPaint = useMemo(() => (choropleth ? { "fill-opacity": 0.95 } : undefined), [choropleth]);
+  const linePaint = useMemo(() => ({
+    "line-color": ["case", sel, ink.fg, choropleth ? ink.surface : ink.muted],
+    "line-width": ["case", sel, 2.5, 1],
+    "line-opacity": ["case", sel, 0.9, choropleth ? 1 : 0.5],
+  }) as never, [highlight, choropleth, ink]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <MapGeoJSON<WardProps> id="wards" data={data} promoteId="ward" fillPaint={fillPaint} fillHoverPaint={fillHoverPaint} linePaint={linePaint}
+      interactive={!!onWardClick} onClick={(e) => onWardClick?.(e.feature.properties.ward)} onHover={(e) => onHover(e?.feature.properties ?? null)} />
+  );
 }
 
-function PointLayer({ point, radius }: { point?: { lat: number; lon: number } | null; radius?: number }) {
-  const map = useMap();
-  useEffect(() => {
-    if (!point) return;
-    const g = L.layerGroup([
-      ...(radius ? [L.circle([point.lat, point.lon], { radius, color: "#262626", weight: 1.5, dashArray: "4 4", fillOpacity: 0.04, interactive: false })] : []),
-      L.marker([point.lat, point.lon], { icon: L.divIcon({ html: `<div class="you-pin"></div>`, className: "", iconSize: [16, 16], iconAnchor: [8, 8] }), interactive: false }),
-    ]).addTo(map);
-    return () => { g.remove(); };
-  }, [map, point, radius]);
-  return null;
+function circle(lat: number, lon: number, radiusM: number): FeatureCollection<Polygon> {
+  const kx = 111320 * Math.cos((lat * Math.PI) / 180), ky = 110540;
+  const ring = Array.from({ length: 65 }, (_, i) => {
+    const a = (i / 64) * 2 * Math.PI;
+    return [lon + (Math.cos(a) * radiusM) / kx, lat + (Math.sin(a) * radiusM) / ky];
+  });
+  return { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [ring] } }] };
+}
+
+function PointLayer({ point, radius, dark }: { point: { lat: number; lon: number }; radius?: number; dark: boolean }) {
+  const ink = dark ? INK.dark : INK.light;
+  const ring = useMemo(() => (radius ? circle(point.lat, point.lon, radius) : null), [point.lat, point.lon, radius]);
+  const fillPaint = useMemo(() => ({ "fill-color": ink.fg, "fill-opacity": 0.04 }), [ink]);
+  const linePaint = useMemo(() => ({ "line-color": ink.fg, "line-width": 1.5, "line-dasharray": [3, 3] }), [ink]);
+  return (
+    <>
+      {ring && <MapGeoJSON id="radius" data={ring} fillPaint={fillPaint} linePaint={linePaint} />}
+      <MapMarker longitude={point.lon} latitude={point.lat}>
+        <MarkerContent className="pointer-events-none cursor-default">
+          <div className="size-4 rounded-full border-[3px] border-white bg-foreground shadow-[0_0_0_6px_var(--black-alpha-12)]" />
+        </MarkerContent>
+      </MapMarker>
+    </>
+  );
 }
 
 function Controller({ view, pickMode, onPick, onMapClick }: Pick<MapViewProps, "view" | "pickMode" | "onPick" | "onMapClick">) {
-  const map = useMap();
+  const { map, isLoaded } = useMap();
+  const desktop = useDesktop();
   const last = useRef<string | null>(null);
+  // Keep places centred in the part of the map the panel does not cover. getCenter() follows the padding too.
   useEffect(() => {
-    if (view && view.key !== last.current) {
-      last.current = view.key;
-      map.flyTo(view.center, view.zoom, { duration: 0.6 });
-    }
+    map?.setPadding(desktop ? { left: PANEL_LEFT, top: 0, right: 0, bottom: 0 } : { left: 0, top: 0, right: 0, bottom: SHEET_PEEK });
+  }, [map, desktop]);
+  const cb = useRef({ onPick, onMapClick, pickMode });
+  cb.current = { onPick, onMapClick, pickMode };
+  useEffect(() => {
+    if (!map || !view || view.key === last.current) return;
+    last.current = view.key;
+    map.flyTo({ center: [view.center[1], view.center[0]], zoom: view.zoom, duration: 600 });
   }, [map, view]);
-  useEffect(() => { setTimeout(() => map.invalidateSize(), 50); }, [map, pickMode]);
-  useMapEvents({
-    move: () => { if (pickMode && onPick) { const c = map.getCenter(); onPick(c.lat, c.lng); } },
-    click: (e) => { if (!pickMode && onMapClick) onMapClick(e.latlng.lat, e.latlng.lng); },
-  });
-  useEffect(() => { if (pickMode && onPick) { const c = map.getCenter(); onPick(c.lat, c.lng); } }, [map, pickMode, onPick]);
+  useEffect(() => {
+    if (!map || !isLoaded) return;
+    const report = () => { const { pickMode, onPick } = cb.current; if (pickMode && onPick) { const c = map.getCenter(); onPick(c.lat, c.lng); } };
+    const click = (e: MapLayerMouseEvent) => {
+      const { pickMode, onMapClick } = cb.current;
+      if (pickMode || !onMapClick) return;
+      const hit = map.queryRenderedFeatures(e.point, { layers: ["problems-clusters", "problems-points"].filter((l) => map.getLayer(l)) });
+      if (!hit.length) onMapClick(e.lngLat.lat, e.lngLat.lng);
+    };
+    report();
+    map.on("move", report);
+    map.on("click", click);
+    return () => { map.off("move", report); map.off("click", click); };
+  }, [map, isLoaded, pickMode]);
   return null;
 }
 
+const overlay = "rounded-lg border bg-popover/95 px-3 py-2 text-popover-foreground shadow-sm";
+
 export default function MapView(p: MapViewProps) {
-  const [zoomHint, setZoomHint] = useState(false);
+  const [hover, setHover] = useState<WardProps | null>(null);
   return (
-    <div className="mapwrap">
-      <MapContainer center={[19.08, 72.88]} zoom={11} minZoom={10} maxZoom={19} className="map" preferCanvas
-        maxBounds={[[18.7, 72.55], [19.5, 73.25]]} whenReady={() => setZoomHint(true)}>
-        <TileLayer
-          key={p.dark ? "dark" : "light"}
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url={`https://{s}.basemaps.cartocdn.com/${p.dark ? "dark_all" : "rastertiles/voyager"}/{z}/{x}/{y}{r}.png`}
-          subdomains="abcd" maxZoom={20} />
-        <WardLayer highlight={p.highlightWard} choropleth={p.choropleth} onWardClick={p.onWardClick} />
-        {!p.choropleth && <ClusterLayer rows={p.rows} />}
+    <div className="absolute inset-0 bg-muted">
+      <MapRoot theme={p.dark ? "dark" : "light"} center={[72.88, 19.08]} zoom={11} minZoom={10} maxZoom={19} maxBounds={BOUNDS}>
+        <WardLayer highlight={p.highlightWard} choropleth={p.choropleth} onWardClick={p.onWardClick} dark={p.dark} onHover={setHover} />
+        {!p.choropleth && <ProblemsLayer rows={p.rows} dark={p.dark} />}
         {!p.choropleth && <ReportsLayer reports={p.reports} onSupport={p.onSupport} />}
-        {!p.pickMode && <PointLayer point={p.point} radius={p.radius} />}
+        {!p.pickMode && p.point && <PointLayer point={p.point} radius={p.radius} dark={p.dark} />}
         <Controller view={p.view} pickMode={p.pickMode} onPick={p.onPick} onMapClick={p.onMapClick} />
-      </MapContainer>
-      {p.pickMode && <div className="center-pin" aria-hidden="true"><span /></div>}
-      {!p.choropleth && !p.pickMode && zoomHint && (
-        <div className="legend body-small" aria-label="Map legend">
-          {(["open", "resolved", "closed", "citizen"] as const).map((k) => (
-            <span key={k}><i className={`dot dot--${k}`} />{STATUS_STYLE[k].label}</span>
-          ))}
+        <MapControls position="top-right" showZoom showLocate={!p.choropleth} />
+      </MapRoot>
+      {p.pickMode && (
+        // A pin fixed to the padded map centre; the map moves under it.
+        <div aria-hidden="true" className="pointer-events-none absolute top-[calc((100%-296px)/2)] left-1/2 z-10 md:top-1/2 md:left-[calc(50%+216px)]">
+          <div className="absolute -top-10 -left-3.5 size-7 -rotate-45 rounded-[50%_50%_50%_0] border-[3px] border-white bg-primary shadow-md" />
+          <div className="absolute -top-0.5 -left-[3px] size-1.5 rounded-full bg-black/35" />
         </div>
       )}
-      {p.choropleth && <ChoroLegend {...p.choropleth} />}
+      <div className="pointer-events-none absolute top-3 left-3 z-10 flex flex-col items-start gap-2 md:top-auto md:right-3 md:bottom-12 md:left-auto md:items-end">
+        {p.choropleth && hover && (
+          <div className={cn(overlay, "max-w-64")}>
+            <div className="label-small">{wardLabel(hover.ward)}</div>
+            <div className="body-small text-muted-foreground">{hover.areas}</div>
+            <div className="body-small tabular-nums">{p.choropleth.label}: {hover.value === null ? "No data" : p.choropleth.format(hover.value)}</div>
+          </div>
+        )}
+        {!p.choropleth && !p.pickMode && (
+          <div className={cn(overlay, "body-small flex flex-wrap gap-x-3 gap-y-1 max-md:label-x-small max-md:max-w-[calc(100vw-5rem)] max-md:px-2.5 max-md:py-1.5 md:flex-col")} aria-label="Map legend">
+            {(["open", "resolved", "closed", "citizen"] as const).map((k) => (
+              <span key={k} className="flex items-center gap-2"><StatusDot kind={k} />{STATUS_STYLE[k].label}</span>
+            ))}
+          </div>
+        )}
+        {p.choropleth && <ChoroLegend {...p.choropleth} />}
+      </div>
     </div>
   );
 }
@@ -247,11 +316,11 @@ function ChoroLegend({ values, label, format, higherIsWorse }: NonNullable<MapVi
   if (!v.length) return null;
   const lo = Math.min(...v), hi = Math.max(...v);
   return (
-    <div className="legend legend--ramp body-small">
+    <div className={cn(overlay, "body-small flex min-w-44 flex-col gap-1")}>
       <b className="label-small">{label}</b>
-      <div className="ramp">{CHORO_RAMP.map((c) => <i key={c} style={{ background: c }} />)}</div>
-      <div className="ramp-ends"><span>{higherIsWorse ? format(lo) : format(hi)}</span><span>{higherIsWorse ? format(hi) : format(lo)}</span></div>
-      <div className="ramp-ends"><span>Better</span><span>Worse</span></div>
+      <div className="flex gap-0.5">{CHORO_RAMP.map((c) => <i key={c} className="h-2.5 flex-1 rounded-sm" style={{ background: c }} />)}</div>
+      <div className="flex justify-between tabular-nums text-muted-foreground"><span>{higherIsWorse ? format(lo) : format(hi)}</span><span>{higherIsWorse ? format(hi) : format(lo)}</span></div>
+      <div className="flex justify-between text-muted-foreground"><span>Better</span><span>Worse</span></div>
     </div>
   );
 }
